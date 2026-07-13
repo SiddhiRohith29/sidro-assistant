@@ -2,7 +2,7 @@
 
 Sidro is a local-first personal AI assistant for Siddharth. It runs on a Windows machine, opens in a browser, stores data locally in SQLite, and can use Ollama for local chat so the app does not depend on OpenAI quota for normal use.
 
-Current status: Sidro v1 local MVP and Phase 2 assistant-quality work are locked, and Phase 3 context-awareness work has started. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a light neon coral UI theme.
+Current status: Sidro v1, Phase 2 assistant quality, and Phase 3 context awareness are locked, and Phase 4 source-grounded answers have started. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a light neon coral UI theme.
 
 ## Phase Status
 
@@ -26,9 +26,9 @@ Completed:
 
 ### Phase 3: Context Awareness
 
-Status: started.
+Status: locked for the current context-awareness layer.
 
-Implemented in this phase so far:
+Completed:
 
 - Memory duplicate handling so the same saved memory is not stored repeatedly.
 - Ranked memory search so more relevant memories are preferred over simple newest-first matching.
@@ -37,11 +37,24 @@ Implemented in this phase so far:
 - `/api/context/preview` for checking which memories/files match a question without waiting for a full model response.
 - Verification coverage for the Phase 3 health marker, duplicate memory guard, and context preview counts.
 
-Remaining Phase 3 ideas:
+### Phase 4: Source-Grounded Answers
 
-- Stronger file citations inside the written answer body.
+Status: started.
+
+Implemented in this phase so far:
+
+- File context now receives source labels such as `[F1]`, `[F2]`, and `[F3]`.
+- File-backed chat answers are instructed to cite source labels inline.
+- If the model omits a source list, Sidro appends a compact `Sources` section automatically.
+- Chat composer now has a `Context` button to preview matching memories/files before sending.
+- Context preview cards show matching memory text and file snippets with source labels.
+- Verification coverage checks the Phase 4 health marker and source-label metadata.
+
+Remaining Phase 4 ideas:
+
 - More prompt tests for planning, coding help, and document Q&A.
-- Optional manual context preview button in the chat composer.
+- Better answer templates for summaries, comparisons, and extracted facts.
+- Optional clickable source expansion from an assistant reply badge.
 
 ## Tech Stack
 
@@ -190,7 +203,7 @@ cd "C:\Users\siddh\Documents\ai assistant\sidro-run"
 The script checks:
 
 - Backend health and settings
-- Phase 3 health marker
+- Phase 4 health marker
 - Local chat memory tool
 - Phase 2 capability-boundary behavior
 - Phase 3 memory duplicate handling and context preview
@@ -222,6 +235,7 @@ The Chat tab is the main assistant console.
 - `Assistant bubble`: Shows Sidro's response.
 - `Memory` badge on a reply: Means Sidro used saved memories while answering.
 - `Files` badge on a reply: Means Sidro used indexed uploaded file context while answering.
+- `Sources` section in a reply: Lists file chunks Sidro used, with labels like `[F1]`.
 - `Sidro is thinking...`: Appears while the backend is generating a response.
 - `Tool activity` panel: Shows internal actions such as transcription, file search, note creation, or other safe local tools.
 - `No tools used yet`: Means the current chat has not triggered a tool call.
@@ -240,6 +254,7 @@ Composer controls:
 - `Shift + Enter`: Adds a new line inside the prompt box.
 - `Microphone` button: Starts voice recording. Speak into the mic; Sidro transcribes the audio into the prompt box.
 - `Pause/Stop recording` button: Stops the current voice recording and sends the audio for transcription.
+- `Context` button: Previews matching saved memories and indexed file snippets before sending.
 - `Send` button: Sends the current text in the prompt box.
 - `Stop response` button: Appears while Sidro is responding. It cancels the current response request.
 - `Listening...` animation: Appears when the microphone is active.
@@ -307,7 +322,7 @@ The Settings tab shows the current backend/session configuration.
 
 - `GET /api/settings`: Reads safe config details for the Settings tab.
 - `POST /api/chat`: Sends a user message, optional memory context, optional file context, and returns Sidro's response with context metadata.
-- `POST /api/context/preview`: Shows which memories/files match a question without generating a full assistant reply.
+- `POST /api/context/preview`: Shows which memories/files match a question without generating a full assistant reply. File matches include source labels such as `[F1]`.
 - `POST /api/transcribe`: Receives microphone audio and returns transcript text.
 - `POST /api/speak`: Converts text to audio when a TTS provider is configured.
 - `GET/POST/DELETE /api/memories`: Manage saved memories.
@@ -332,6 +347,8 @@ The Settings tab shows the current backend/session configuration.
 - Done: Indexed file search returns matching chunks and can be used by chat when Files is enabled.
 - Done: Assistant replies show Memory/Files badges when those context sources are used.
 - Done: Phase 3 context preview shows matching memory/file context without requiring a full AI answer.
+- Done: Phase 4 source labels and automatic file source lists make document answers easier to verify.
+- Done: Chat composer has a Context preview button for checking memory/file matches before sending.
 - Done: Settings explains the active provider/model/voice configuration without exposing secrets.
 - Done: `.env`, local SQLite data, audio recordings, model files, logs, `node_modules`, and build output are ignored by Git.
 - Done: `scripts/verify-v1.ps1` provides repeatable v1 verification.

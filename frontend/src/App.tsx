@@ -17,7 +17,7 @@ import {
   User,
   X
 } from "lucide-react";
-import { api, ChatMessage, FileHit, IndexedFile, Memory, Note, Settings, ToolActivity } from "./api/client";
+import { api, ChatContextSummary, ChatMessage, FileHit, IndexedFile, Memory, Note, Settings, ToolActivity } from "./api/client";
 
 type Tab = "chat" | "memory" | "files" | "notes" | "settings";
 type VoiceStatus = "idle" | "listening" | "transcribing";
@@ -128,6 +128,8 @@ function App() {
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
   const [liveTranscript, setLiveTranscript] = useState("");
   const [composerKey, setComposerKey] = useState(0);
+  const [contextPreview, setContextPreview] = useState<ChatContextSummary | null>(null);
+  const [isPreviewingContext, setIsPreviewingContext] = useState(false);
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [memoryDraft, setMemoryDraft] = useState("");
@@ -242,6 +244,7 @@ function App() {
     setError("");
     setActions([]);
     setActivities([]);
+    setContextPreview(null);
     setIsLoading(true);
     setMessages((current) => [...current, { role: "user", content: message }]);
 
@@ -305,6 +308,7 @@ function App() {
     setError("");
     setActivities([]);
     setActions([]);
+    setContextPreview(null);
     setRecording(false);
     setVoiceStatus("idle");
     audioChunksRef.current = [];
@@ -320,6 +324,7 @@ function App() {
     setError("");
     setActions([]);
     setActivities([{ tool: "brainstorm", status: "ready", detail: "Fresh brainstorming chat started" }]);
+    setContextPreview(null);
     setRecording(false);
     setVoiceStatus("idle");
     setLiveTranscript("");
@@ -482,6 +487,22 @@ function App() {
     } catch {
       setVoiceStatus("idle");
       setError("Microphone permission was not granted.");
+    }
+  }
+
+  async function previewContext() {
+    const query = (promptRef.current?.value ?? input).trim();
+    if (!query || isPreviewingContext) return;
+    setError("");
+    setIsPreviewingContext(true);
+    try {
+      const preview = await api.contextPreview({ query, use_file_context: useFileContext, memory_enabled: memoryEnabled });
+      setContextPreview(preview);
+      setActivities([{ tool: "context_preview", status: "ready", detail: { memory: preview.memory_count, files: preview.file_count } }]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Context preview failed.");
+    } finally {
+      setIsPreviewingContext(false);
     }
   }
 
@@ -662,12 +683,16 @@ function App() {
                       {liveTranscript && <span className="min-w-0 flex-1 truncate text-teal-100/80">{liveTranscript}</span>}
                     </div>
                   )}
+                  {contextPreview && <ContextPreviewPanel summary={contextPreview} />}
                   <div className="cyber-composer mx-auto flex max-w-4xl items-end gap-2 p-2">
                     <textarea
                       key={composerKey}
                       ref={promptRef}
                       value={input}
-                      onChange={(event) => setInput(event.target.value)}
+                      onChange={(event) => {
+                        setInput(event.target.value);
+                        setContextPreview(null);
+                      }}
                       autoComplete="new-password"
                       autoCorrect="off"
                       autoCapitalize="sentences"
@@ -684,6 +709,16 @@ function App() {
                       }}
                     />
                     <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void previewContext()}
+                        disabled={!input.trim() || isPreviewingContext}
+                        className="cyber-text-button context-preview-button inline-flex items-center gap-2"
+                        title="Preview matching memory and file context"
+                      >
+                        <Search size={15} />
+                        {isPreviewingContext ? "Checking" : "Context"}
+                      </button>
                       <IconButton title={recording ? "Stop recording" : "Record voice"} onClick={toggleRecording} tone={recording ? "danger" : "neutral"}>
                         {recording ? <Pause size={18} /> : <Mic size={18} />}
                       </IconButton>
@@ -885,13 +920,45 @@ function App() {
   );
 }
 
+function ContextPreviewPanel({ summary }: { summary: ChatContextSummary }) {
+  const hasContext = summary.memory_count > 0 || summary.file_count > 0;
+  return (
+    <div className="context-preview-panel mx-auto mb-3 max-w-4xl">
+      <div className="context-preview-header">
+        <span>Context preview</span>
+        <span>{summary.memory_count} memory / {summary.file_count} file matches</span>
+      </div>
+      {!hasContext && <p className="context-preview-empty">No matching saved memory or indexed file context found.</p>}
+      {summary.memories.length > 0 && (
+        <div className="context-preview-group">
+          <div className="context-preview-label">Memory</div>
+          {summary.memories.slice(0, 3).map((item) => (
+            <div key={item.id} className="context-preview-item">{item.content}</div>
+          ))}
+        </div>
+      )}
+      {summary.files.length > 0 && (
+        <div className="context-preview-group">
+          <div className="context-preview-label">Files</div>
+          {summary.files.slice(0, 3).map((item) => (
+            <div key={item.chunk_id} className="context-preview-item">
+              <strong>[{item.citation}] {item.filename}</strong>
+              <span>{item.snippet}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ContextBadges({ message }: { message: ChatMessage }) {
   const summary = message.metadata?.context_summary;
   const usedMemory = Boolean(message.metadata?.used_memory_context || (summary?.memory_count || 0) > 0);
   const usedFiles = Boolean(message.metadata?.used_file_context || (summary?.file_count || 0) > 0);
   if (!usedMemory && !usedFiles) return null;
 
-  const fileNames = Array.from(new Set((summary?.files || []).map((item) => item.filename))).slice(0, 2).join(", ");
+  const fileNames = Array.from(new Set((summary?.files || []).map((item) => `[${item.citation}] ${item.filename}`))).slice(0, 2).join(", ");
 
   return (
     <div className="context-badges" aria-label="Context used by this reply">

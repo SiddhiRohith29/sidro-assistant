@@ -25,7 +25,7 @@ export type ChatContextSummary = {
   memory_count: number;
   file_count: number;
   memories: Array<{ id: number; content: string; score?: number }>;
-  files: Array<{ file_id: number; filename: string; chunk_id: number; chunk_index: number; snippet: string }>;
+  files: Array<{ citation: string; file_id: number; filename: string; chunk_id: number; chunk_index: number; snippet: string }>;
 };
 
 export type ChatMessageMetadata = {

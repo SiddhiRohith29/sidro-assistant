@@ -37,9 +37,9 @@ def main() -> None:
     health = expect_success("Backend health", request("GET", "/api/health"))
     if not health.get("ok"):
         fail("Backend health", "health response did not report ok=true")
-    if health.get("quality_phase", 0) < 3:
-        fail("Phase 3 health marker", "backend did not report quality_phase >= 3")
-    ok("Phase 3 health marker", f"quality_phase={health.get('quality_phase')}")
+    if health.get("quality_phase", 0) < 4:
+        fail("Phase 4 health marker", "backend did not report quality_phase >= 4")
+    ok("Phase 4 health marker", f"quality_phase={health.get('quality_phase')}")
 
     settings = expect_success("Settings endpoint", request("GET", "/api/settings"))
     ok("Settings loaded", f"provider={settings.get('chat_provider')} ollama={settings.get('ollama_model')}")
@@ -125,7 +125,10 @@ def main() -> None:
         fail("Phase 3 context preview", "memory context was not surfaced")
     if context_preview.get("file_count", 0) < 1:
         fail("Phase 3 context preview", "file context was not surfaced")
+    if not all(item.get("citation") for item in context_preview.get("files", [])):
+        fail("Phase 4 source labels", "file context did not include citation labels")
     ok("Phase 3 context counts", f"memory={context_preview.get('memory_count')} files={context_preview.get('file_count')}")
+    ok("Phase 4 source labels", ", ".join(item.get("citation", "") for item in context_preview.get("files", [])[:3]))
 
     short_audio = request(
         "POST",
@@ -144,7 +147,7 @@ def main() -> None:
     else:
         fail("TTS fallback path", f"unexpected HTTP {tts.status_code}: {tts.text[:200]}")
 
-    print("Sidro v1 + Phase 3 verification passed.")
+    print("Sidro v1 + Phase 4 verification passed.")
 
 
 if __name__ == "__main__":

@@ -75,7 +75,7 @@ def health() -> dict:
         "stt_provider": current.stt_provider,
         "tts_provider": current.tts_provider,
         "db": "ready",
-        "quality_phase": 3,
+        "quality_phase": 4,
     }
 
 
@@ -153,22 +153,44 @@ def _context_summary(remembered: list[dict] | None = None, file_hits: list[dict]
         }
         for item in (remembered or [])
     ]
-    file_items = [
-        {
-            "file_id": hit.get("file_id"),
-            "filename": hit.get("filename", "Uploaded file"),
-            "chunk_id": hit.get("chunk_id"),
-            "chunk_index": hit.get("chunk_index"),
-            "snippet": (hit.get("content", "")[:180]).strip(),
-        }
-        for hit in (file_hits or [])
-    ]
+    file_items = []
+    seen_chunks: set[Any] = set()
+    for hit in file_hits or []:
+        chunk_id = hit.get("chunk_id")
+        if chunk_id in seen_chunks:
+            continue
+        seen_chunks.add(chunk_id)
+        file_items.append(
+            {
+                "citation": f"F{len(file_items) + 1}",
+                "file_id": hit.get("file_id"),
+                "filename": hit.get("filename", "Uploaded file"),
+                "chunk_id": chunk_id,
+                "chunk_index": hit.get("chunk_index"),
+                "snippet": (hit.get("content", "")[:180]).strip(),
+            }
+        )
     return {
         "memory_count": len(memory_items),
         "file_count": len(file_items),
         "memories": memory_items,
         "files": file_items,
     }
+
+
+def _append_file_sources(reply: str, context_summary: dict[str, Any]) -> str:
+    files_used = context_summary.get("files") or []
+    if not files_used:
+        return reply
+    if "sources:" in reply.lower():
+        return reply
+    lines = []
+    for source in files_used[:5]:
+        label = source.get("citation", "F?")
+        filename = source.get("filename", "Uploaded file")
+        chunk = source.get("chunk_index")
+        lines.append(f"[{label}] {filename}, chunk {chunk}")
+    return reply.rstrip() + "\n\nSources:\n" + "\n".join(lines)
 
 
 def _chat_response(
@@ -378,19 +400,21 @@ def chat(request: ChatRequest) -> dict:
         )
 
     file_hits = files.search_files(message, limit=5) if request.use_file_context else []
+    context_summary = _context_summary(remembered, file_hits)
+
     if file_hits:
+        citation_by_chunk = {item["chunk_id"]: item["citation"] for item in context_summary["files"]}
         file_context = "\n\n".join(
-            f"File: {hit['filename']} / chunk {hit['chunk_index']}\n{hit['content']}" for hit in file_hits
+            f"Source [{citation_by_chunk.get(hit['chunk_id'], 'F?')}] File: {hit['filename']} / chunk {hit['chunk_index']}\n{hit['content']}"
+            for hit in file_hits
         )
         prompt_messages.append(
             {
                 "role": "system",
-                "content": "You are using indexed file context. Mention that you are using file context in the answer.\n\n"
+                "content": "You are using indexed file context. Mention that you are using file context in the answer. Cite file-backed claims with bracket labels like [F1].\n\n"
                 + file_context,
             }
         )
-
-    context_summary = _context_summary(remembered, file_hits)
 
     prompt_messages.extend(_recent_messages(conversation_id, limit=4))
     prompt_messages.append(
@@ -412,6 +436,8 @@ def chat(request: ChatRequest) -> dict:
     used_file_context = bool(file_hits)
     if used_file_context and "file context" not in reply.lower():
         reply = f"Using file context, {reply}"
+    if used_file_context:
+        reply = _append_file_sources(reply, context_summary)
 
     used_memory_context = bool(remembered)
     tool_activities = quality_activities
