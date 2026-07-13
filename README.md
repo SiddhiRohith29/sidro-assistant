@@ -2,7 +2,7 @@
 
 Sidro is a local-first personal AI assistant for Siddharth. It runs on a Windows machine, opens in a browser, stores data locally in SQLite, and can use Ollama for local chat so the app does not depend on OpenAI quota for normal use.
 
-Current status: Sidro v1 local MVP is mostly built and is in refinement/testing. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, and a cyberpunk/cosmos UI theme.
+Current status: Sidro v1 local MVP is locked for the core local feature set. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a cyberpunk/cosmos UI theme.
 
 ## Tech Stack
 
@@ -139,6 +139,26 @@ Then open:
 http://127.0.0.1:5180
 ```
 
+## Verify V1
+
+With the backend running, run the acceptance script:
+
+```powershell
+cd "C:\Users\siddh\Documents\ai assistant\sidro-run"
+.\scripts\verify-v1.ps1
+```
+
+The script checks:
+
+- Backend health and settings
+- Local chat memory tool
+- Note creation and note search
+- Text file upload and indexed file search
+- Voice short-recording error handling
+- TTS backend or frontend fallback path
+
+It uses small safe test records in the local SQLite database and does not require OpenAI quota.
+
 ## UI Guide: What Every Tab and Button Does
 
 ### Sidebar
@@ -252,12 +272,30 @@ The Settings tab shows the current backend/session configuration.
 - `POST /api/notes/search`: Search notes.
 - Tool actions are logged into `tool_logs` where supported.
 
+## V1 Acceptance Checklist
+
+- Done: Backend and frontend run locally on Windows.
+- Done: Chat works through Ollama/local fallback without OpenAI quota.
+- Done: Sidro uses a stronger response-quality prompt and larger local answer budget.
+- Done: Prompt box clears after send and does not bring back stale text.
+- Done: English voice input records, previews live transcript where the browser supports it, and sends audio to faster-whisper.
+- Done: Voice input has a short-recording guard with a helpful error.
+- Done: Voice replies use backend TTS when configured and browser speech fallback when backend TTS is unavailable.
+- Done: Memories can be created, listed, deleted, and used in chat.
+- Done: Notes can be created and searched.
+- Done: Text, Markdown, PDF, and DOCX uploads are supported when extraction libraries can read the file.
+- Done: Indexed file search returns matching chunks and can be used by chat when Files is enabled.
+- Done: Settings explains the active provider/model/voice configuration without exposing secrets.
+- Done: `.env`, local SQLite data, audio recordings, model files, logs, `node_modules`, and build output are ignored by Git.
+- Done: `scripts/verify-v1.ps1` provides repeatable v1 verification.
+
 ## Current Known Limitations
 
 - Telugu/bilingual mode was removed to keep v1 stable and English-focused.
 - Voice input currently targets English transcription.
 - Local LLM quality depends on the installed Ollama model and available RAM/CPU/GPU.
-- Voice replies need a configured TTS provider. OpenAI TTS needs an API key; Piper needs local model paths.
+- Browser TTS fallback depends on browser speech support and installed system voices.
+- Piper TTS is supported by configuration, but a Piper executable/model is not bundled in Git.
 - `frontend-dev/` is ignored and should not be used for future source changes.
 
 ## GitHub Daily Update Workflow

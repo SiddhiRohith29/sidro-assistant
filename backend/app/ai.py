@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 import httpx
 from openai import OpenAI
@@ -52,9 +52,9 @@ def complete_chat_ollama(messages: list[dict[str, str]]) -> str:
         "messages": messages,
         "stream": False,
         "options": {
-            "temperature": 0.22,
-            "top_p": 0.9,
-            "repeat_penalty": 1.08,
+            "temperature": 0.28,
+            "top_p": 0.92,
+            "repeat_penalty": 1.06,
             "num_predict": settings.ollama_num_predict,
             "num_ctx": settings.ollama_num_ctx,
         },

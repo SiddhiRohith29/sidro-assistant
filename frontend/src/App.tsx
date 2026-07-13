@@ -145,6 +145,7 @@ function App() {
   const speechRecognitionRef = useRef<LocalSpeechRecognition | null>(null);
   const voiceBaseInputRef = useRef("");
   const browserTranscriptRef = useRef("");
+  const speechFinalPiecesRef = useRef<string[]>([]);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -179,12 +180,40 @@ function App() {
     setNotes(await api.notes());
   }
 
+  function speakWithBrowser(text: string) {
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      throw new Error("Browser voice replies are not supported in this browser.");
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text.slice(0, 4000));
+    utterance.lang = "en-US";
+    utterance.rate = 0.98;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+  }
+
   async function playReply(text: string, language?: string) {
-    const audio = await api.speak(text, ttsVoice, language);
-    const url = URL.createObjectURL(audio);
-    const player = new Audio(url);
-    player.onended = () => URL.revokeObjectURL(url);
-    await player.play();
+    try {
+      const audio = await api.speak(text, ttsVoice, language);
+      const url = URL.createObjectURL(audio);
+      const player = new Audio(url);
+      player.onended = () => URL.revokeObjectURL(url);
+      await player.play();
+      setActivities((current) => [{ tool: "tts", status: "played", detail: "Backend voice reply" }, ...current]);
+    } catch (err) {
+      try {
+        speakWithBrowser(text);
+        setActivities((current) => [
+          { tool: "tts", status: "browser fallback", detail: err instanceof Error ? err.message : "Backend TTS unavailable" },
+          ...current
+        ]);
+      } catch (fallbackErr) {
+        setActivities((current) => [
+          { tool: "tts", status: "unavailable", detail: fallbackErr instanceof Error ? fallbackErr.message : "Voice reply failed" },
+          ...current
+        ]);
+      }
+    }
   }
 
   function clearComposer(remount = false) {
@@ -193,6 +222,7 @@ function App() {
     setLiveTranscript("");
     voiceBaseInputRef.current = "";
     browserTranscriptRef.current = "";
+    speechFinalPiecesRef.current = [];
     if (remount) {
       setComposerKey((current) => current + 1);
       window.setTimeout(() => {
@@ -292,10 +322,10 @@ function App() {
     recognition.interimResults = true;
     recognition.lang = "en-US";
     recognition.onresult = (event) => {
-      const finalPieces: string[] = [];
+      const finalPieces = [...speechFinalPiecesRef.current];
       let interimText = "";
 
-      for (let index = 0; index < event.results.length; index += 1) {
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const piece = event.results[index][0]?.transcript.trim() || "";
         if (!piece) continue;
         if (event.results[index].isFinal) {
@@ -305,10 +335,11 @@ function App() {
         }
       }
 
-      const finalText = finalPieces.join(" ").trim();
+      const finalText = finalPieces.join(" ").replace(/\s+/g, " ").trim();
+      speechFinalPiecesRef.current = finalPieces;
       browserTranscriptRef.current = finalText;
       setLiveTranscript(interimText);
-      setInput([voiceBaseInputRef.current, finalText, interimText].filter(Boolean).join(" ").trim());
+      setInput([voiceBaseInputRef.current, finalText, interimText].filter(Boolean).join(" ").replace(/\s+/g, " ").trim());
     };
     recognition.onerror = () => {
       setActivities([{ tool: "voice-preview", status: "limited", detail: "Recording continues; live preview is unavailable." }]);
@@ -359,6 +390,7 @@ function App() {
       audioChunksRef.current = [];
       voiceBaseInputRef.current = promptRef.current?.value.trim() || "";
       browserTranscriptRef.current = "";
+      speechFinalPiecesRef.current = [];
       setLiveTranscript("");
       setInput(voiceBaseInputRef.current);
       setActivities([{ tool: "recording", status: "listening", detail: recordingFormatRef.current.mimeType || "browser default audio" }]);

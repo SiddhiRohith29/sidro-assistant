@@ -1,4 +1,4 @@
-﻿import json
+import json
 import re
 import uuid
 from pathlib import Path
@@ -331,18 +331,22 @@ def chat(request: ChatRequest) -> dict:
             }
         )
 
+    prompt_messages.extend(_recent_messages(conversation_id, limit=4))
     prompt_messages.append(
         {
             "role": "system",
             "content": (
-                "Answer quality rules: finish the answer fully; prefer 3-7 concrete bullets or steps; "
-                "include examples when they make the answer actionable; state assumptions; avoid filler; "
+                "Final response rules: finish the answer fully; satisfy the exact count requested by the user; "
+                "prefer concise paragraphs or 3-7 concrete bullets unless the user asks for more; "
+                "include examples only when they make the answer actionable; state assumptions; avoid filler; "
                 "do not trail off; avoid repeating the same idea; avoid duplicate schedule blocks; "
-                "if there are tradeoffs, name the best recommendation."
+                "if there are tradeoffs, name the best recommendation; end with a useful final sentence. "
+                "Hard capability boundary: Sidro v1 can actually do these things now: chat, save/search memories, create/search notes, upload/search indexed files, transcribe English voice input, play voice replies through backend TTS or browser fallback, and suggest safe website-open actions. "
+                "Do not say or imply that Sidro can directly schedule calendars, move/rename local files, send email, run shell commands, control apps, or create reminders automatically. "
+                "For unsupported actions, say Sidro can draft a plan, checklist, note, or instructions that Siddharth can apply manually."
             ),
         }
     )
-    prompt_messages.extend(_recent_messages(conversation_id, limit=4))
 
     try:
         reply = ai.complete_chat(prompt_messages)

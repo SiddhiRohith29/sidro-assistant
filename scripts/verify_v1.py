@@ -1,0 +1,98 @@
+import os
+import sys
+from pathlib import Path
+
+import requests
+
+BASE_URL = os.getenv("SIDRO_BACKEND_URL", "http://127.0.0.1:8020").rstrip("/")
+
+
+def ok(label: str, detail: str = "") -> None:
+    print(f"[OK] {label}{': ' + detail if detail else ''}")
+
+
+def fail(label: str, detail: str) -> None:
+    print(f"[FAIL] {label}: {detail}")
+    raise SystemExit(1)
+
+
+def request(method: str, path: str, **kwargs):
+    try:
+        response = requests.request(method, f"{BASE_URL}{path}", timeout=45, **kwargs)
+    except requests.RequestException as exc:
+        fail(path, str(exc))
+    return response
+
+
+def expect_success(label: str, response):
+    if not response.ok:
+        fail(label, f"HTTP {response.status_code} {response.text[:300]}")
+    ok(label)
+    return response.json() if response.content else {}
+
+
+def main() -> None:
+    print(f"Sidro v1 verification against {BASE_URL}")
+
+    health = expect_success("Backend health", request("GET", "/api/health"))
+    if not health.get("ok"):
+        fail("Backend health", "health response did not report ok=true")
+
+    settings = expect_success("Settings endpoint", request("GET", "/api/settings"))
+    ok("Settings loaded", f"provider={settings.get('chat_provider')} ollama={settings.get('ollama_model')}")
+
+    memory_payload = {
+        "message": "remember that Sidro v1 verification checks should stay reliable",
+        "use_file_context": False,
+        "memory_enabled": True,
+    }
+    chat_memory = expect_success("Chat local memory tool", request("POST", "/api/chat", json=memory_payload))
+    if "Remembered" not in chat_memory.get("reply", ""):
+        fail("Chat local memory tool", "memory tool did not return confirmation")
+
+    note = expect_success(
+        "Create note",
+        request("POST", "/api/notes", json={"title": "Sidro v1 verification", "content": "Notes search should find the nebula keyword."}),
+    )
+    if not note.get("id"):
+        fail("Create note", "note id missing")
+
+    note_hits = expect_success("Search notes", request("POST", "/api/notes/search", json={"query": "nebula"}))
+    if not any("nebula" in item.get("content", "").lower() for item in note_hits):
+        fail("Search notes", "created note was not found")
+
+    sample_text = (
+        "Sidro verification sample file. The keyword starforge proves indexed file search works. "
+        "This file is safe test content for the v1 acceptance script."
+    )
+    files = {"file": ("sidro-v1-sample.txt", sample_text.encode("utf-8"), "text/plain")}
+    uploaded = expect_success("Upload text file", request("POST", "/api/files/upload", files=files))
+    if uploaded.get("chunk_count", 0) < 1:
+        fail("Upload text file", "file did not create chunks")
+
+    file_hits = expect_success("Search indexed files", request("POST", "/api/files/search", json={"query": "starforge"}))
+    if not any("starforge" in item.get("content", "").lower() for item in file_hits):
+        fail("Search indexed files", "uploaded file was not found")
+
+    short_audio = request(
+        "POST",
+        "/api/transcribe",
+        files={"audio": ("too-short.webm", b"x", "audio/webm")},
+    )
+    if short_audio.status_code != 400 or "too short" not in short_audio.text.lower():
+        fail("Voice short-recording guard", f"expected helpful 400, got {short_audio.status_code}: {short_audio.text[:200]}")
+    ok("Voice short-recording guard")
+
+    tts = request("POST", "/api/speak", json={"text": "Sidro voice check", "voice": settings.get("tts_voice", "alloy")})
+    if tts.ok:
+        ok("Backend TTS", tts.headers.get("content-type", "audio returned"))
+    elif tts.status_code in {400, 502} and "tts" in tts.text.lower():
+        ok("TTS fallback path", "backend unavailable; frontend browser voice fallback is expected")
+    else:
+        fail("TTS fallback path", f"unexpected HTTP {tts.status_code}: {tts.text[:200]}")
+
+    print("Sidro v1 verification passed.")
+
+
+if __name__ == "__main__":
+    main()

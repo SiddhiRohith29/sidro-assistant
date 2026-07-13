@@ -1,3 +1,5 @@
+import re
+
 from .db import get_connection
 from .tools import utc_now
 
@@ -28,8 +30,21 @@ def search_notes(query: str, limit: int = 20) -> list[dict]:
     query = query.strip()
     if not query:
         return list_notes(limit)
-    fts_query = " OR ".join(token.replace('"', "") for token in query.split() if token.strip())
+    tokens = re.findall(r"[A-Za-z0-9_]+", query)
+    fts_query = " OR ".join(tokens[:12])
     with get_connection() as conn:
+        if not fts_query:
+            like = f"%{query}%"
+            rows = conn.execute(
+                """
+                SELECT * FROM notes
+                WHERE title LIKE ? OR content LIKE ?
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (like, like, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
         try:
             rows = conn.execute(
                 """

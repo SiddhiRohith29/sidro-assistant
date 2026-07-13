@@ -64,10 +64,18 @@ def synthesize_speech(text: str, voice: str | None = None, language: str | None 
 
     if provider == "command":
         raise RuntimeError("Command TTS is not configured in the simplified local setup.")
-    if provider == "piper" or (provider == "auto" and settings.piper_exe and settings.piper_model):
+    if provider == "piper":
         return _speak_piper(text), "audio/wav"
-    if provider == "openai" or provider == "auto":
+    if provider == "openai":
+        if not settings.openai_api_key:
+            raise RuntimeError("OpenAI TTS needs OPENAI_API_KEY in .env.")
         return ai.synthesize_speech(text, voice), "audio/mpeg"
+    if provider == "auto":
+        if settings.piper_exe and settings.piper_model:
+            return _speak_piper(text), "audio/wav"
+        if settings.openai_api_key:
+            return ai.synthesize_speech(text, voice), "audio/mpeg"
+        raise RuntimeError("No backend TTS provider is configured. Sidro can still use the browser voice fallback from the frontend.")
 
     raise RuntimeError("No TTS provider is configured.")
 
