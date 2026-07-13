@@ -12,12 +12,13 @@ import {
   Search,
   Send,
   Settings as SettingsIcon,
+  MessageSquarePlus,
   Trash2,
   Upload,
   User,
   X
 } from "lucide-react";
-import { api, ChatContextSummary, ChatMessage, FileHit, IndexedFile, Memory, Note, Settings, ToolActivity } from "./api/client";
+import { api, ChatContextSummary, ChatMessage, Conversation, FileHit, IndexedFile, Memory, Note, Settings, ToolActivity } from "./api/client";
 
 type Tab = "chat" | "memory" | "files" | "notes" | "settings";
 type VoiceStatus = "idle" | "listening" | "transcribing";
@@ -115,6 +116,7 @@ function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -165,10 +167,14 @@ function App() {
       const loadedSettings = await api.settings();
       setSettings(loadedSettings);
       setTtsVoice(loadedSettings.tts_voice);
-      await Promise.all([refreshMemories(), refreshFiles(), refreshNotes()]);
+      await Promise.all([refreshMemories(), refreshFiles(), refreshNotes(), refreshConversations()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Sidro.");
     }
+  }
+
+  async function refreshConversations() {
+    setConversations(await api.conversations());
   }
 
   async function refreshMemories() {
@@ -277,7 +283,7 @@ function App() {
       ]);
       setActivities(response.tool_activities);
       setActions(response.actions);
-      await Promise.all([refreshMemories(), refreshNotes()]);
+      await Promise.all([refreshMemories(), refreshNotes(), refreshConversations()]);
       if (voiceReplies) await playReply(response.reply, response.language);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -299,9 +305,10 @@ function App() {
     abortRef.current?.abort();
   }
 
-  function clearChatView() {
+  function startNewChat() {
     stopBrowserSpeechRecognition();
     abortRef.current?.abort();
+    setActiveTab("chat");
     setConversationId(undefined);
     setMessages([]);
     clearComposer(true);
@@ -312,6 +319,32 @@ function App() {
     setRecording(false);
     setVoiceStatus("idle");
     audioChunksRef.current = [];
+  }
+
+  function clearChatView() {
+    startNewChat();
+  }
+
+  async function openConversation(id: string) {
+    stopBrowserSpeechRecognition();
+    abortRef.current?.abort();
+    setActiveTab("chat");
+    setError("");
+    setActions([]);
+    setActivities([]);
+    setContextPreview(null);
+    clearComposer(true);
+    const result = await api.messages(id);
+    setConversationId(id);
+    setMessages(result.messages.filter((message) => message.role !== "system"));
+  }
+
+  async function removeConversation(id: string) {
+    await api.deleteConversation(id);
+    if (conversationId === id) {
+      startNewChat();
+    }
+    await refreshConversations();
   }
 
   function startBrainstormChat() {
@@ -577,6 +610,28 @@ function App() {
         <div className="cyber-status-chip mt-8">
           AI: {settings?.chat_provider || "auto"} / {settings?.api_key_configured ? "OpenAI key found" : "local fallback"}
         </div>
+        <div className="conversation-library mt-5">
+          <div className="conversation-library-header">
+            <span>Recent chats</span>
+            <button type="button" onClick={startNewChat} title="Start new chat">
+              <MessageSquarePlus size={15} />
+            </button>
+          </div>
+          <div className="conversation-list">
+            {conversations.length === 0 && <div className="conversation-empty">No saved chats yet.</div>}
+            {conversations.slice(0, 8).map((conversation) => (
+              <div key={conversation.id} className={`conversation-row ${conversation.id === conversationId ? "is-current" : ""}`}>
+                <button type="button" onClick={() => void openConversation(conversation.id)} title={conversation.title}>
+                  <span>{conversation.title}</span>
+                  <small>{conversation.message_count} messages</small>
+                </button>
+                <button type="button" onClick={() => void removeConversation(conversation.id)} title="Delete chat" aria-label="Delete chat">
+                  <X size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
@@ -600,6 +655,15 @@ function App() {
                   <p className="text-xs text-slate-400">Ask, plan, search files, create notes, remember useful details.</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-300">
+                  <button
+                    type="button"
+                    onClick={startNewChat}
+                    className="cyber-text-button cyber-text-button-small inline-flex items-center gap-2"
+                    title="Start a clean chat"
+                  >
+                    <MessageSquarePlus size={14} />
+                    New chat
+                  </button>
                   <button
                     type="button"
                     onClick={startBrainstormChat}

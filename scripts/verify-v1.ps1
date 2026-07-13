@@ -1,5 +1,5 @@
 param(
-    [string]$BackendUrl = "http://127.0.0.1:8021"
+    [string]$BackendUrl = "http://127.0.0.1:8022"
 )
 
 $Root = Split-Path -Parent $PSScriptRoot

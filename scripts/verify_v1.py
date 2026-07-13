@@ -4,7 +4,7 @@ from pathlib import Path
 
 import requests
 
-BASE_URL = os.getenv("SIDRO_BACKEND_URL", "http://127.0.0.1:8021").rstrip("/")
+BASE_URL = os.getenv("SIDRO_BACKEND_URL", "http://127.0.0.1:8022").rstrip("/")
 
 
 def ok(label: str, detail: str = "") -> None:
@@ -37,9 +37,9 @@ def main() -> None:
     health = expect_success("Backend health", request("GET", "/api/health"))
     if not health.get("ok"):
         fail("Backend health", "health response did not report ok=true")
-    if health.get("quality_phase", 0) < 4:
-        fail("Phase 4 health marker", "backend did not report quality_phase >= 4")
-    ok("Phase 4 health marker", f"quality_phase={health.get('quality_phase')}")
+    if health.get("quality_phase", 0) < 5:
+        fail("Phase 5 health marker", "backend did not report quality_phase >= 5")
+    ok("Phase 5 health marker", f"quality_phase={health.get('quality_phase')}")
 
     settings = expect_success("Settings endpoint", request("GET", "/api/settings"))
     ok("Settings loaded", f"provider={settings.get('chat_provider')} ollama={settings.get('ollama_model')}")
@@ -92,6 +92,37 @@ def main() -> None:
         fail("Phase 2 unsupported action guard", "unsupported action response was not direct or safe")
     if "scheduled" in unsupported_reply or "i will remind" in unsupported_reply:
         fail("Phase 2 unsupported action guard", "unsupported action response claimed the action was performed")
+
+    workflow_chat = expect_success(
+        "Phase 5 conversation create",
+        request(
+            "POST",
+            "/api/chat",
+            json={
+                "message": "Phase 5 workflow conversation library check",
+                "use_file_context": False,
+                "memory_enabled": False,
+            },
+        ),
+    )
+    workflow_id = workflow_chat.get("conversation_id")
+    if not workflow_id:
+        fail("Phase 5 conversation create", "conversation id missing")
+    conversations = expect_success("Phase 5 conversation list", request("GET", "/api/conversations"))
+    if not any(item.get("id") == workflow_id for item in conversations):
+        fail("Phase 5 conversation list", "created conversation was not listed")
+    messages = expect_success("Phase 5 conversation resume", request("GET", f"/api/conversations/{workflow_id}/messages"))
+    if len(messages.get("messages", [])) < 2:
+        fail("Phase 5 conversation resume", "created conversation did not return saved messages")
+    renamed = expect_success(
+        "Phase 5 conversation rename",
+        request("PATCH", f"/api/conversations/{workflow_id}", json={"title": "Phase 5 workflow check"}),
+    )
+    if renamed.get("title") != "Phase 5 workflow check":
+        fail("Phase 5 conversation rename", "conversation title did not update")
+    deleted = expect_success("Phase 5 conversation delete", request("DELETE", f"/api/conversations/{workflow_id}"))
+    if not deleted.get("deleted"):
+        fail("Phase 5 conversation delete", "delete response did not confirm deletion")
 
     note = expect_success(
         "Create note",
@@ -147,7 +178,7 @@ def main() -> None:
     else:
         fail("TTS fallback path", f"unexpected HTTP {tts.status_code}: {tts.text[:200]}")
 
-    print("Sidro v1 + Phase 4 verification passed.")
+    print("Sidro v1 + Phase 5 verification passed.")
 
 
 if __name__ == "__main__":

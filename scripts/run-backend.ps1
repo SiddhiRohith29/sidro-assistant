@@ -6,4 +6,4 @@ $env:HUGGINGFACE_HUB_CACHE = Join-Path $Root "local-data\huggingface\hub"
 $env:HF_HUB_DISABLE_SYMLINKS = "1"
 New-Item -ItemType Directory -Force -Path $env:SIDRO_DATA_DIR, $env:HF_HOME, $env:HUGGINGFACE_HUB_CACHE | Out-Null
 & ".\.venv\Scripts\Activate.ps1"
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8021
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8022

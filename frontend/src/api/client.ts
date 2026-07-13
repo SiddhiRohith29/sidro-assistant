@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8021";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8022";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -78,6 +78,7 @@ export type Settings = {
   voices: string[];
 };
 
+export type Conversation = { id: string; title: string; created_at: string; updated_at: string; message_count: number };
 export type Memory = { id: number; content: string; source: string; created_at: string };
 export type Note = { id: number; title: string; content: string; created_at: string; updated_at: string };
 export type IndexedFile = {
@@ -97,9 +98,14 @@ export type FileHit = {
 
 export const api = {
   settings: () => request<Settings>("/api/settings"),
+  conversations: () => request<Conversation[]>("/api/conversations"),
   latestConversation: () => request<Record<string, string>>("/api/conversations/latest"),
   messages: (conversationId: string) =>
     request<{ conversation_id: string; messages: ChatMessage[] }>(`/api/conversations/${conversationId}/messages`),
+  renameConversation: (conversationId: string, title: string) =>
+    request<Conversation>(`/api/conversations/${conversationId}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  deleteConversation: (conversationId: string) =>
+    request<{ deleted: boolean }>(`/api/conversations/${conversationId}`, { method: "DELETE" }),
   chat: (body: { message: string; conversation_id?: string; use_file_context: boolean; memory_enabled: boolean }, signal?: AbortSignal) =>
     request<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(body), signal }),
   contextPreview: (body: { query: string; use_file_context: boolean; memory_enabled: boolean }) =>

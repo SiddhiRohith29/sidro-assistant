@@ -2,7 +2,7 @@
 
 Sidro is a local-first personal AI assistant for Siddharth. It runs on a Windows machine, opens in a browser, stores data locally in SQLite, and can use Ollama for local chat so the app does not depend on OpenAI quota for normal use.
 
-Current status: Sidro v1, Phase 2 assistant quality, and Phase 3 context awareness are locked, and Phase 4 source-grounded answers have started. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a light neon coral UI theme.
+Current status: Sidro v1 through Phase 4 are locked, and Phase 5 workflow sessions have started. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a light neon coral UI theme.
 
 ## Phase Status
 
@@ -39,9 +39,9 @@ Completed:
 
 ### Phase 4: Source-Grounded Answers
 
-Status: started.
+Status: locked for the current source-grounding layer.
 
-Implemented in this phase so far:
+Completed:
 
 - File context now receives source labels such as `[F1]`, `[F2]`, and `[F3]`.
 - File-backed chat answers are instructed to cite source labels inline.
@@ -50,11 +50,25 @@ Implemented in this phase so far:
 - Context preview cards show matching memory text and file snippets with source labels.
 - Verification coverage checks the Phase 4 health marker and source-label metadata.
 
-Remaining Phase 4 ideas:
+### Phase 5: Workflow Sessions
+
+Status: started.
+
+Implemented in this phase so far:
+
+- Backend conversation library endpoint for listing recent chats.
+- Backend conversation rename and delete endpoints.
+- Sidebar `Recent chats` section for resuming previous conversations.
+- Header `New chat` button for starting a clean session without clearing saved data.
+- Recent chat delete controls for removing old sessions.
+- Verification coverage for creating, listing, resuming, renaming, and deleting a conversation.
+
+Remaining Phase 5 ideas:
 
 - More prompt tests for planning, coding help, and document Q&A.
 - Better answer templates for summaries, comparisons, and extracted facts.
 - Optional clickable source expansion from an assistant reply badge.
+- Search/filter inside the conversation library.
 
 ## Tech Stack
 
@@ -65,7 +79,7 @@ Remaining Phase 4 ideas:
 - Optional cloud AI: OpenAI API if `OPENAI_API_KEY` is configured
 - Local ports:
   - Frontend: `http://127.0.0.1:5180`
-  - Backend: `http://127.0.0.1:8021`
+  - Backend: `http://127.0.0.1:8022`
   - Ollama: `http://127.0.0.1:11434`
 
 ## Folder Structure
@@ -203,7 +217,7 @@ cd "C:\Users\siddh\Documents\ai assistant\sidro-run"
 The script checks:
 
 - Backend health and settings
-- Phase 4 health marker
+- Phase 5 health marker
 - Local chat memory tool
 - Phase 2 capability-boundary behavior
 - Phase 3 memory duplicate handling and context preview
@@ -225,6 +239,10 @@ It uses small safe test records in the local SQLite database and does not requir
 - `Notes`: Opens local note creation and note search.
 - `Settings`: Opens session/configuration information.
 - `AI: ollama / local fallback`: Shows the active AI route. In local mode, Sidro uses Ollama instead of OpenAI quota.
+- `Recent chats`: Shows recent saved conversations.
+- `New chat` icon in Recent chats: Starts a clean chat session.
+- `Recent chat row`: Opens that saved conversation.
+- `Delete chat` icon: Removes that saved conversation and its messages.
 
 ### Chat Tab
 
@@ -242,6 +260,7 @@ The Chat tab is the main assistant console.
 
 Header controls:
 
+- `New chat`: Starts a clean chat session while leaving memories, files, and notes intact.
 - `Clear`: Clears the visible chat screen and resets the current conversation view. It does not delete the app code or your uploaded files.
 - `Memory` checkbox: When enabled, Sidro can use saved memories while answering.
 - `Files` checkbox: When enabled, Sidro can include indexed file context in answers.
@@ -323,6 +342,10 @@ The Settings tab shows the current backend/session configuration.
 - `GET /api/settings`: Reads safe config details for the Settings tab.
 - `POST /api/chat`: Sends a user message, optional memory context, optional file context, and returns Sidro's response with context metadata.
 - `POST /api/context/preview`: Shows which memories/files match a question without generating a full assistant reply. File matches include source labels such as `[F1]`.
+- `GET /api/conversations`: Lists recent saved conversations.
+- `GET /api/conversations/{conversation_id}/messages`: Loads a saved conversation and its messages.
+- `PATCH /api/conversations/{conversation_id}`: Renames a saved conversation.
+- `DELETE /api/conversations/{conversation_id}`: Deletes a saved conversation and its messages.
 - `POST /api/transcribe`: Receives microphone audio and returns transcript text.
 - `POST /api/speak`: Converts text to audio when a TTS provider is configured.
 - `GET/POST/DELETE /api/memories`: Manage saved memories.
@@ -349,6 +372,7 @@ The Settings tab shows the current backend/session configuration.
 - Done: Phase 3 context preview shows matching memory/file context without requiring a full AI answer.
 - Done: Phase 4 source labels and automatic file source lists make document answers easier to verify.
 - Done: Chat composer has a Context preview button for checking memory/file matches before sending.
+- Done: Phase 5 conversation library supports New Chat, recent chat resume, rename API, and delete.
 - Done: Settings explains the active provider/model/voice configuration without exposing secrets.
 - Done: `.env`, local SQLite data, audio recordings, model files, logs, `node_modules`, and build output are ignored by Git.
 - Done: `scripts/verify-v1.ps1` provides repeatable v1 verification.

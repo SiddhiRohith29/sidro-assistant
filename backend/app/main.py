@@ -59,6 +59,10 @@ class ContextPreviewRequest(BaseModel):
     memory_enabled: bool = True
 
 
+class ConversationTitleRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
@@ -75,7 +79,7 @@ def health() -> dict:
         "stt_provider": current.stt_provider,
         "tts_provider": current.tts_provider,
         "db": "ready",
-        "quality_phase": 4,
+        "quality_phase": 5,
     }
 
 
@@ -469,6 +473,47 @@ def context_preview(request: ContextPreviewRequest) -> dict:
         {"memory_count": summary["memory_count"], "file_count": summary["file_count"]},
     )
     return summary
+
+
+@app.get("/api/conversations")
+def list_conversations(limit: int = 20) -> list[dict]:
+    safe_limit = max(1, min(limit, 50))
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.id, c.title, c.created_at, c.updated_at, COUNT(m.id) AS message_count
+            FROM conversations c
+            LEFT JOIN messages m ON m.conversation_id = c.id
+            GROUP BY c.id
+            ORDER BY c.updated_at DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.patch("/api/conversations/{conversation_id}")
+def rename_conversation(conversation_id: str, request: ConversationTitleRequest) -> dict:
+    title = re.sub(r"\s+", " ", request.title.strip())[:120]
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
+            (title, utc_now(), conversation_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+        row = conn.execute("SELECT * FROM conversations WHERE id = ?", (conversation_id,)).fetchone()
+    return dict(row)
+
+
+@app.delete("/api/conversations/{conversation_id}")
+def delete_conversation(conversation_id: str) -> dict:
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return {"deleted": True}
 
 
 @app.get("/api/conversations/latest")

@@ -417,6 +417,98 @@ select:focus,
   box-shadow: 0 0 0 3px rgba(255,162,162,0.24);
 }
 
+.conversation-library {
+  border: 1px solid rgba(216, 95, 109, 0.20);
+  border-radius: 18px;
+  background: rgba(255, 250, 250, 0.54);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.78), 0 16px 38px rgba(216,95,109,0.10);
+  padding: 0.75rem;
+}
+
+.conversation-library-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #672b3a;
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.conversation-library-header button {
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 1px solid rgba(216,95,109,0.28);
+  border-radius: 10px;
+  background: rgba(255,162,162,0.22);
+  color: #672b3a;
+}
+
+.conversation-list {
+  display: grid;
+  gap: 0.42rem;
+  margin-top: 0.65rem;
+}
+
+.conversation-empty {
+  color: #7f6671;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.conversation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.8rem;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.conversation-row > button {
+  border-radius: 12px;
+  border: 1px solid rgba(216,95,109,0.14);
+  background: rgba(255,255,255,0.46);
+  color: #3b2230;
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.conversation-row > button:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.48rem 0.56rem;
+  text-align: left;
+}
+
+.conversation-row > button:first-child span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.conversation-row > button:first-child small {
+  color: #8a6f79;
+  font-size: 0.68rem;
+}
+
+.conversation-row > button:last-child {
+  display: grid;
+  place-items: center;
+  color: #8d3948;
+}
+
+.conversation-row:hover > button,
+.conversation-row.is-current > button {
+  border-color: rgba(216,95,109,0.34);
+  background: rgba(255,162,162,0.24);
+}
+
+.conversation-row:hover > button:first-child {
+  transform: translateX(1px);
+}
 .context-preview-button {
   min-height: 2.6rem;
   white-space: nowrap;
