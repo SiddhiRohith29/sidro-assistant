@@ -152,15 +152,28 @@ function App() {
   const browserTranscriptRef = useRef("");
   const speechFinalPiecesRef = useRef<string[]>([]);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToBottomRef = useRef(true);
 
   useEffect(() => {
     void loadInitialState();
   }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!shouldStickToBottomRef.current) return;
+    window.requestAnimationFrame(() => {
+      const scroller = chatScrollRef.current;
+      if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    });
   }, [messages, isLoading]);
+
+  function updateScrollStickiness() {
+    const scroller = chatScrollRef.current;
+    if (!scroller) return;
+    const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    shouldStickToBottomRef.current = distanceFromBottom < 80;
+  }
 
   async function loadInitialState() {
     try {
@@ -251,6 +264,7 @@ function App() {
     setActions([]);
     setActivities([]);
     setContextPreview(null);
+    shouldStickToBottomRef.current = true;
     setIsLoading(true);
     setMessages((current) => [...current, { role: "user", content: message }]);
 
@@ -334,6 +348,7 @@ function App() {
     setActivities([]);
     setContextPreview(null);
     clearComposer(true);
+    shouldStickToBottomRef.current = true;
     const result = await api.messages(id);
     setConversationId(id);
     setMessages(result.messages.filter((message) => message.role !== "system"));
@@ -698,7 +713,7 @@ function App() {
 
             <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
               <div className="flex min-h-0 flex-1 flex-col">
-                <div className="cyber-chat-area min-h-0 flex-1 overflow-y-auto px-5 py-6">
+                <div ref={chatScrollRef} onScroll={updateScrollStickiness} className="cyber-chat-area chat-scroll min-h-0 flex-1 overflow-y-auto px-5 py-6">
                   <div className="mx-auto flex max-w-4xl flex-col gap-4">
                     {messages.length === 0 && (
                       <div className="cyber-surface p-4 text-sm text-slate-300">
