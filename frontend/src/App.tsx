@@ -1,0 +1,830 @@
+import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+import {
+  Bot,
+  Brain,
+  FileText,
+  Mic,
+  NotebookPen,
+  Pause,
+  Play,
+  Plus,
+  Search,
+  Send,
+  Settings as SettingsIcon,
+  Trash2,
+  Upload,
+  User,
+  X
+} from "lucide-react";
+import { api, ChatMessage, FileHit, IndexedFile, Memory, Note, Settings, ToolActivity } from "./api/client";
+
+type Tab = "chat" | "memory" | "files" | "notes" | "settings";
+type VoiceStatus = "idle" | "listening" | "transcribing";
+type SpeechResultLike = { isFinal: boolean; 0?: { transcript: string } };
+type SpeechResultListLike = { length: number; [index: number]: SpeechResultLike };
+type LocalSpeechRecognitionEvent = Event & { resultIndex: number; results: SpeechResultListLike };
+type LocalSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: LocalSpeechRecognitionEvent) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+type LocalSpeechRecognitionConstructor = new () => LocalSpeechRecognition;
+type RecordingFormat = { mimeType: string; extension: string };
+
+declare global {
+  interface Window {
+    SpeechRecognition?: LocalSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: LocalSpeechRecognitionConstructor;
+  }
+}
+
+const tabs: Array<{ id: Tab; label: string; icon: typeof Bot }> = [
+  { id: "chat", label: "Chat", icon: Bot },
+  { id: "memory", label: "Memory", icon: Brain },
+  { id: "files", label: "Files", icon: FileText },
+  { id: "notes", label: "Notes", icon: NotebookPen },
+  { id: "settings", label: "Settings", icon: SettingsIcon }
+];
+
+function IconButton({
+  title,
+  children,
+  onClick,
+  disabled,
+  tone = "neutral",
+  type = "button"
+}: {
+  title: string;
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  tone?: "neutral" | "primary" | "danger";
+  type?: "button" | "submit";
+}) {
+  const toneClass =
+    tone === "primary"
+      ? "cyber-icon-primary"
+      : tone === "danger"
+        ? "cyber-icon-danger"
+        : "cyber-icon-neutral";
+  return (
+    <button
+      type={type}
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={`cyber-icon-button ${toneClass}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TextButton({
+  children,
+  onClick,
+  disabled,
+  type = "button"
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  type?: "button" | "submit";
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className="cyber-text-button"
+    >
+      {children}
+    </button>
+  );
+}
+
+function App() {
+  const [activeTab, setActiveTab] = useState<Tab>("chat");
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [conversationId, setConversationId] = useState<string | undefined>();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [activities, setActivities] = useState<ToolActivity[]>([]);
+  const [actions, setActions] = useState<Array<{ type: "open_url"; url: string; label: string }>>([]);
+  const [voiceReplies, setVoiceReplies] = useState(false);
+  const [ttsVoice, setTtsVoice] = useState("alloy");
+  const [memoryEnabled, setMemoryEnabled] = useState(true);
+  const [useFileContext, setUseFileContext] = useState(true);
+  const [recording, setRecording] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [composerKey, setComposerKey] = useState(0);
+
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [memoryDraft, setMemoryDraft] = useState("");
+  const [files, setFiles] = useState<IndexedFile[]>([]);
+  const [fileHits, setFileHits] = useState<FileHit[]>([]);
+  const [fileQuery, setFileQuery] = useState("");
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+  const [noteQuery, setNoteQuery] = useState("");
+
+  const abortRef = useRef<AbortController | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingFormatRef = useRef<RecordingFormat>({ mimeType: "audio/webm", extension: "webm" });
+  const speechRecognitionRef = useRef<LocalSpeechRecognition | null>(null);
+  const voiceBaseInputRef = useRef("");
+  const browserTranscriptRef = useRef("");
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    void loadInitialState();
+  }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
+
+  async function loadInitialState() {
+    try {
+      const loadedSettings = await api.settings();
+      setSettings(loadedSettings);
+      setTtsVoice(loadedSettings.tts_voice);
+      await Promise.all([refreshMemories(), refreshFiles(), refreshNotes()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load Sidro.");
+    }
+  }
+
+  async function refreshMemories() {
+    setMemories(await api.memories());
+  }
+
+  async function refreshFiles() {
+    setFiles(await api.files());
+  }
+
+  async function refreshNotes() {
+    setNotes(await api.notes());
+  }
+
+  async function playReply(text: string, language?: string) {
+    const audio = await api.speak(text, ttsVoice, language);
+    const url = URL.createObjectURL(audio);
+    const player = new Audio(url);
+    player.onended = () => URL.revokeObjectURL(url);
+    await player.play();
+  }
+
+  function clearComposer(remount = false) {
+    if (promptRef.current) promptRef.current.value = "";
+    setInput("");
+    setLiveTranscript("");
+    voiceBaseInputRef.current = "";
+    browserTranscriptRef.current = "";
+    if (remount) {
+      setComposerKey((current) => current + 1);
+      window.setTimeout(() => {
+        if (promptRef.current) promptRef.current.value = "";
+      }, 0);
+    }
+  }
+
+  async function sendMessage(event?: FormEvent) {
+    event?.preventDefault();
+    stopBrowserSpeechRecognition();
+    const message = (promptRef.current?.value ?? input).trim();
+    if (!message || isLoading) return;
+
+    clearComposer(true);
+    setError("");
+    setActions([]);
+    setActivities([]);
+    setIsLoading(true);
+    setMessages((current) => [...current, { role: "user", content: message }]);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const response = await api.chat(
+        {
+          message,
+          conversation_id: conversationId,
+          use_file_context: useFileContext,
+          memory_enabled: memoryEnabled
+        },
+        controller.signal
+      );
+      setConversationId(response.conversation_id);
+      setMessages((current) => [...current, { role: "assistant", content: response.reply }]);
+      setActivities(response.tool_activities);
+      setActions(response.actions);
+      await Promise.all([refreshMemories(), refreshNotes()]);
+      if (voiceReplies) await playReply(response.reply, response.language);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError("Stopped the current response.");
+      } else {
+        setError(err instanceof Error ? err.message : "Message failed.");
+      }
+    } finally {
+      setIsLoading(false);
+      abortRef.current = null;
+      if ((promptRef.current?.value || "").trim() === message) {
+        clearComposer(false);
+      }
+      window.setTimeout(() => promptRef.current?.focus(), 0);
+    }
+  }
+
+  function stopCurrentRequest() {
+    abortRef.current?.abort();
+  }
+
+  function clearChatView() {
+    stopBrowserSpeechRecognition();
+    abortRef.current?.abort();
+    setConversationId(undefined);
+    setMessages([]);
+    clearComposer(true);
+    setError("");
+    setActivities([]);
+    setActions([]);
+    setRecording(false);
+    setVoiceStatus("idle");
+    audioChunksRef.current = [];
+  }
+
+  function stopBrowserSpeechRecognition() {
+    const recognition = speechRecognitionRef.current;
+    if (!recognition) return;
+    recognition.onend = null;
+    recognition.onerror = null;
+    recognition.onresult = null;
+    try {
+      recognition.stop();
+    } catch {
+      // The browser may already have stopped it.
+    }
+    speechRecognitionRef.current = null;
+  }
+
+  function startBrowserSpeechRecognition() {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setActivities([{ tool: "voice-preview", status: "unavailable", detail: "Live transcript preview is not supported in this browser." }]);
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onresult = (event) => {
+      const finalPieces: string[] = [];
+      let interimText = "";
+
+      for (let index = 0; index < event.results.length; index += 1) {
+        const piece = event.results[index][0]?.transcript.trim() || "";
+        if (!piece) continue;
+        if (event.results[index].isFinal) {
+          finalPieces.push(piece);
+        } else {
+          interimText = `${interimText} ${piece}`.trim();
+        }
+      }
+
+      const finalText = finalPieces.join(" ").trim();
+      browserTranscriptRef.current = finalText;
+      setLiveTranscript(interimText);
+      setInput([voiceBaseInputRef.current, finalText, interimText].filter(Boolean).join(" ").trim());
+    };
+    recognition.onerror = () => {
+      setActivities([{ tool: "voice-preview", status: "limited", detail: "Recording continues; live preview is unavailable." }]);
+    };
+    recognition.onend = () => {
+      if (mediaRecorderRef.current?.state === "recording") {
+        try {
+          recognition.start();
+        } catch {
+          // Some browsers reject immediate restarts; final Whisper transcription still runs.
+        }
+      }
+    };
+    speechRecognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch {
+      speechRecognitionRef.current = null;
+    }
+  }
+
+  function getRecordingFormat(): RecordingFormat {
+    const candidates: RecordingFormat[] = [
+      { mimeType: "audio/webm;codecs=opus", extension: "webm" },
+      { mimeType: "audio/webm", extension: "webm" },
+      { mimeType: "audio/ogg;codecs=opus", extension: "ogg" },
+      { mimeType: "audio/mp4", extension: "m4a" }
+    ];
+    const supported = candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate.mimeType));
+    return supported || { mimeType: "", extension: "webm" };
+  }
+
+  async function toggleRecording() {
+    if (recording) {
+      stopBrowserSpeechRecognition();
+      mediaRecorderRef.current?.stop();
+      setRecording(false);
+      setVoiceStatus("transcribing");
+      return;
+    }
+
+    setError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const format = getRecordingFormat();
+      const recorder = format.mimeType ? new MediaRecorder(stream, { mimeType: format.mimeType }) : new MediaRecorder(stream);
+      recordingFormatRef.current = format.mimeType ? format : { mimeType: recorder.mimeType || "audio/webm", extension: "webm" };
+      audioChunksRef.current = [];
+      voiceBaseInputRef.current = promptRef.current?.value.trim() || "";
+      browserTranscriptRef.current = "";
+      setLiveTranscript("");
+      setInput(voiceBaseInputRef.current);
+      setActivities([{ tool: "recording", status: "listening", detail: recordingFormatRef.current.mimeType || "browser default audio" }]);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        stopBrowserSpeechRecognition();
+        const format = recordingFormatRef.current;
+        const blob = new Blob(audioChunksRef.current, { type: format.mimeType || "audio/webm" });
+        const browserText = browserTranscriptRef.current.trim();
+        if (blob.size < 512) {
+          if (browserText) {
+            setInput([voiceBaseInputRef.current, browserText].filter(Boolean).join(" ").trim());
+            setActivities([{ tool: "voice-preview", status: "used", detail: browserText }]);
+          } else {
+            setError("I did not receive enough microphone audio. Try holding the mic button for a little longer.");
+          }
+          setVoiceStatus("idle");
+          setLiveTranscript("");
+          return;
+        }
+        setActivities([{ tool: "transcribe", status: "working", detail: `Sending ${Math.round(blob.size / 1024)} KB audio` }]);
+        try {
+          const result = await api.transcribe(blob, `recording.${format.extension}`);
+          const transcript = result.text.trim() || browserText;
+          if (!transcript) {
+            setError("I could not hear clear speech in that recording. Try again closer to the microphone.");
+            setActivities([{ tool: `transcribe:${result.provider}`, status: result.language || "empty", detail: "No speech detected" }]);
+            return;
+          }
+          setInput([voiceBaseInputRef.current, transcript].filter(Boolean).join(" ").trim());
+          setActivities([{ tool: `transcribe:${result.provider}`, status: result.language || "done", detail: result.text }]);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Transcription failed.");
+        } finally {
+          setVoiceStatus("idle");
+          setLiveTranscript("");
+        }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start(250);
+      startBrowserSpeechRecognition();
+      setRecording(true);
+      setVoiceStatus("listening");
+    } catch {
+      setVoiceStatus("idle");
+      setError("Microphone permission was not granted.");
+    }
+  }
+
+  async function saveMemory(event: FormEvent) {
+    event.preventDefault();
+    if (!memoryDraft.trim()) return;
+    await api.createMemory(memoryDraft);
+    setMemoryDraft("");
+    await refreshMemories();
+  }
+
+  async function deleteMemory(id: number) {
+    await api.deleteMemory(id);
+    await refreshMemories();
+  }
+
+  async function uploadFile(fileList: FileList | null) {
+    const file = fileList?.[0];
+    if (!file) return;
+    setError("");
+    try {
+      const indexed = await api.uploadFile(file);
+      setActivities([{ tool: "index_file", status: "indexed", detail: `${indexed.filename} (${indexed.chunk_count} chunks)` }]);
+      await refreshFiles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed.");
+    }
+  }
+
+  async function searchFiles(event: FormEvent) {
+    event.preventDefault();
+    if (!fileQuery.trim()) return;
+    setFileHits(await api.searchFiles(fileQuery));
+  }
+
+  async function saveNote(event: FormEvent) {
+    event.preventDefault();
+    if (!noteContent.trim()) return;
+    await api.createNote(noteTitle || "Untitled note", noteContent);
+    setNoteTitle("");
+    setNoteContent("");
+    await refreshNotes();
+  }
+
+  async function searchNotes(event: FormEvent) {
+    event.preventDefault();
+    setNotes(noteQuery.trim() ? await api.searchNotes(noteQuery) : await api.notes());
+  }
+
+  return (
+    <main className="cosmos-app flex h-screen min-h-[640px] w-full overflow-hidden text-slate-100">
+      <aside className="cyber-sidebar hidden w-72 shrink-0 p-5 md:block">
+        <div className="mb-8">
+          <div className="brand-wordmark text-xl font-semibold">Sidro</div>
+          <div className="mt-1 text-xs text-slate-400">Local command center</div>
+        </div>
+        <nav className="space-y-1.5">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`cyber-nav-item ${activeTab === tab.id ? "is-active" : ""}`}
+              >
+                <Icon size={18} />
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="cyber-status-chip mt-8">
+          AI: {settings?.chat_provider || "auto"} / {settings?.api_key_configured ? "OpenAI key found" : "local fallback"}
+        </div>
+      </aside>
+
+      <section className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-center gap-2 border-b border-slate-800 bg-slate-950/70 p-2 md:hidden">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <IconButton key={tab.id} title={tab.label} onClick={() => setActiveTab(tab.id)} tone={activeTab === tab.id ? "primary" : "neutral"}>
+                <Icon size={18} />
+              </IconButton>
+            );
+          })}
+        </div>
+
+        {activeTab === "chat" && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <header className="cyber-header px-5 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h1 className="cyber-heading">Chat</h1>
+                  <p className="text-xs text-slate-400">Ask, plan, search files, create notes, remember useful details.</p>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-300">
+                  <button
+                    type="button"
+                    onClick={clearChatView}
+                    className="cyber-text-button cyber-text-button-small"
+                  >
+                    Clear
+                  </button>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} />
+                    Memory
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={useFileContext} onChange={(event) => setUseFileContext(event.target.checked)} />
+                    Files
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={voiceReplies} onChange={(event) => setVoiceReplies(event.target.checked)} />
+                    Voice
+                  </label>
+                </div>
+              </div>
+            </header>
+
+            <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="cyber-chat-area min-h-0 flex-1 overflow-y-auto px-5 py-6">
+                  <div className="mx-auto flex max-w-4xl flex-col gap-4">
+                    {messages.length === 0 && (
+                      <div className="cyber-surface p-4 text-sm text-slate-300">
+                        Sidro is ready. Try "remember that I prefer concise plans", upload a text file, or ask for today's plan.
+                      </div>
+                    )}
+                    {messages.map((message, index) => (
+                      <div key={`${message.role}-${index}`} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                        {message.role !== "user" && (
+                          <div className="cyber-avatar cyber-avatar-bot">
+                            <Bot size={18} />
+                          </div>
+                        )}
+                        <div
+                          className={`message-bubble ${message.role === "user" ? "message-user" : "message-assistant"}`}
+                        >
+                          {message.content}
+                        </div>
+                        {message.role === "user" && (
+                          <div className="cyber-avatar cyber-avatar-user">
+                            <User size={18} />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {isLoading && <div className="text-sm text-teal-200">Sidro is thinking...</div>}
+                    <div ref={messagesEndRef} />
+                  </div>
+                </div>
+
+                <form onSubmit={sendMessage} autoComplete="off" className="cyber-composer-shell px-5 py-4">
+                  {error && <div className="mb-3 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">{error}</div>}
+                  {voiceStatus !== "idle" && (
+                    <div className="cyber-voice-status mx-auto mb-3 flex max-w-4xl items-center gap-3 px-3 py-2 text-sm text-teal-50">
+                      <div className="flex h-5 items-center gap-1" aria-hidden="true">
+                        {[0, 1, 2, 3].map((bar) => (
+                          <span
+                            key={bar}
+                            className="h-2 w-1 rounded-full bg-teal-200 animate-pulse"
+                            style={{ animationDelay: `${bar * 120}ms` }}
+                          />
+                        ))}
+                      </div>
+                      <span className="font-medium">{voiceStatus === "listening" ? "Listening..." : "Transcribing..."}</span>
+                      {liveTranscript && <span className="min-w-0 flex-1 truncate text-teal-100/80">{liveTranscript}</span>}
+                    </div>
+                  )}
+                  <div className="cyber-composer mx-auto flex max-w-4xl items-end gap-2 p-2">
+                    <textarea
+                      key={composerKey}
+                      ref={promptRef}
+                      value={input}
+                      onChange={(event) => setInput(event.target.value)}
+                      autoComplete="new-password"
+                      autoCorrect="off"
+                      autoCapitalize="sentences"
+                      spellCheck={false}
+                      name="sidro-message"
+                      placeholder="Message Sidro..."
+                      rows={2}
+                      className="cyber-textarea min-h-[52px] flex-1 resize-none border-0 bg-transparent px-3 py-3 text-sm leading-6 outline-none"
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          void sendMessage(event);
+                        }
+                      }}
+                    />
+                    <div className="flex gap-2">
+                      <IconButton title={recording ? "Stop recording" : "Record voice"} onClick={toggleRecording} tone={recording ? "danger" : "neutral"}>
+                        {recording ? <Pause size={18} /> : <Mic size={18} />}
+                      </IconButton>
+                      {isLoading ? (
+                        <IconButton title="Stop response" onClick={stopCurrentRequest} tone="danger">
+                          <X size={18} />
+                        </IconButton>
+                      ) : (
+                        <IconButton title="Send" type="submit" tone="primary" disabled={!input.trim()}>
+                          <Send size={18} />
+                        </IconButton>
+                      )}
+                    </div>
+                  </div>
+                </form>
+              </div>
+
+              <aside className="cyber-side-panel max-h-64 p-5 lg:max-h-none lg:w-80">
+                <h2 className="cyber-heading cyber-heading-small">Tool activity</h2>
+                <div className="mt-3 space-y-2">
+                  {activities.length === 0 && actions.length === 0 && <p className="text-sm text-slate-500">No tools used yet.</p>}
+                  {activities.map((activity, index) => (
+                    <div key={index} className="cyber-surface p-3 text-xs text-slate-300">
+                      <div className="font-medium text-slate-100">{activity.tool}</div>
+                      <div className="mt-1 text-slate-400">{activity.status}</div>
+                    </div>
+                  ))}
+                  {actions.map((action, index) => (
+                    <button
+                      key={index}
+                      onClick={() => window.open(action.url, "_blank", "noopener,noreferrer")}
+                      className="cyber-action flex w-full items-center justify-between px-3 py-2 text-sm"
+                    >
+                      {action.label}
+                      <Play size={16} />
+                    </button>
+                  ))}
+                </div>
+              </aside>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "memory" && (
+          <Panel title="Memory" subtitle="Saved long-term preferences and facts.">
+            <form onSubmit={saveMemory} className="flex gap-2">
+              <input
+                value={memoryDraft}
+                onChange={(event) => setMemoryDraft(event.target.value)}
+                placeholder="Remember that..."
+                className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-teal-400"
+              />
+              <IconButton title="Save memory" type="submit" tone="primary">
+                <Plus size={18} />
+              </IconButton>
+            </form>
+            <div className="space-y-2">
+              {memories.map((item) => (
+                <div key={item.id} className="flex items-start gap-3 rounded-md border border-slate-800 bg-slate-900/80 p-3">
+                  <div className="flex-1 text-sm text-slate-100">{item.content}</div>
+                  <IconButton title="Delete memory" onClick={() => void deleteMemory(item.id)} tone="danger">
+                    <Trash2 size={16} />
+                  </IconButton>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
+
+        {activeTab === "files" && (
+          <Panel title="Files" subtitle="Upload text, Markdown, PDF, or Word files and search their indexed text.">
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-slate-700 bg-slate-900/70 px-4 py-5 text-sm text-slate-300 hover:border-teal-400/70">
+              <Upload size={18} />
+              Upload file
+              <input type="file" className="hidden" accept=".txt,.md,.pdf,.docx" onChange={(event) => void uploadFile(event.target.files)} />
+            </label>
+            <form onSubmit={searchFiles} className="flex gap-2">
+              <input
+                value={fileQuery}
+                onChange={(event) => setFileQuery(event.target.value)}
+                placeholder="Search indexed files..."
+                className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-teal-400"
+              />
+              <IconButton title="Search files" type="submit" tone="primary">
+                <Search size={18} />
+              </IconButton>
+            </form>
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-200">Indexed</h3>
+                {files.map((item) => (
+                  <div key={item.id} className="rounded-md border border-slate-800 bg-slate-900/80 p-3 text-sm">
+                    <div className="font-medium text-white">{item.filename}</div>
+                    <div className="mt-1 text-xs text-slate-400">{item.chunk_count} chunks</div>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-slate-200">Matches</h3>
+                {fileHits.map((hit) => (
+                  <div key={hit.chunk_id} className="rounded-md border border-slate-800 bg-slate-900/80 p-3 text-sm">
+                    <div className="font-medium text-white">{hit.filename}</div>
+                    <p className="mt-2 max-h-28 overflow-hidden text-slate-300">{hit.content}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Panel>
+        )}
+
+        {activeTab === "notes" && (
+          <Panel title="Notes" subtitle="Create notes directly or from chat with 'create note'.">
+            <form onSubmit={saveNote} className="space-y-2">
+              <input
+                value={noteTitle}
+                onChange={(event) => setNoteTitle(event.target.value)}
+                placeholder="Title"
+                className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-teal-400"
+              />
+              <textarea
+                value={noteContent}
+                onChange={(event) => setNoteContent(event.target.value)}
+                placeholder="Note content"
+                rows={4}
+                className="w-full resize-none rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-teal-400"
+              />
+              <TextButton type="submit" disabled={!noteContent.trim()}>
+                Save note
+              </TextButton>
+            </form>
+            <form onSubmit={searchNotes} className="flex gap-2">
+              <input
+                value={noteQuery}
+                onChange={(event) => setNoteQuery(event.target.value)}
+                placeholder="Search notes..."
+                className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-teal-400"
+              />
+              <IconButton title="Search notes" type="submit" tone="primary">
+                <Search size={18} />
+              </IconButton>
+            </form>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {notes.map((note) => (
+                <article key={note.id} className="rounded-md border border-slate-800 bg-slate-900/80 p-3">
+                  <h3 className="text-sm font-semibold text-white">{note.title}</h3>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">{note.content}</p>
+                </article>
+              ))}
+            </div>
+          </Panel>
+        )}
+
+        {activeTab === "settings" && (
+          <Panel title="Settings" subtitle="Local configuration read from the backend and session controls for the browser.">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <SettingRow label="OpenAI API key" value={settings?.api_key_configured ? "Configured in .env" : "Missing in .env"} />
+              <SettingRow label="Chat provider" value={settings?.chat_provider || ""} />
+              <SettingRow label="Chat model" value={settings?.chat_model || ""} />
+              <SettingRow label="Ollama URL" value={settings?.ollama_base_url || ""} />
+              <SettingRow label="Ollama model" value={settings?.ollama_model || ""} />
+              <SettingRow label="STT provider" value={settings?.stt_provider || ""} />
+              <SettingRow label="Whisper model" value={`${settings?.faster_whisper_model || ""} / ${settings?.faster_whisper_device || ""}`} />
+              <SettingRow label="TTS provider" value={settings?.tts_provider || ""} />
+              <SettingRow label="Piper" value={settings?.piper_configured ? "Configured" : "Not configured"} />
+              <SettingRow label="Transcription model" value={settings?.transcription_model || ""} />
+              <SettingRow label="TTS model" value={settings?.tts_model || ""} />
+              <label className="rounded-md border border-slate-800 bg-slate-900/80 p-3">
+                <span className="text-xs uppercase text-slate-500">TTS voice</span>
+                <select
+                  value={ttsVoice}
+                  onChange={(event) => setTtsVoice(event.target.value)}
+                  className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                >
+                  {(settings?.voices || ["alloy"]).map((voice) => (
+                    <option key={voice} value={voice}>
+                      {voice}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="cyber-surface p-3">
+                <span className="text-xs uppercase text-slate-500">Browser session</span>
+                <div className="mt-3 space-y-3 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={voiceReplies} onChange={(event) => setVoiceReplies(event.target.checked)} />
+                    Voice replies
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} />
+                    Memory enabled
+                  </label>
+                </div>
+              </div>
+            </div>
+          </Panel>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function Panel({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+  return (
+    <div className="cyber-page min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
+      <div className="mx-auto max-w-5xl space-y-5">
+        <header>
+          <h1 className="cyber-heading">{title}</h1>
+          <p className="mt-1 text-sm text-slate-400">{subtitle}</p>
+        </header>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SettingRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="cyber-surface p-3">
+      <div className="text-xs uppercase text-slate-500">{label}</div>
+      <div className="mt-2 break-words text-sm text-slate-100">{value || "Not set"}</div>
+    </div>
+  );
+}
+
+export default App;
+
+
+
