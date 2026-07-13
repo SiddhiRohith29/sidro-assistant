@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8022";
+﻿const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8022";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -76,6 +76,9 @@ export type Settings = {
   tts_model: string;
   tts_voice: string;
   voices: string[];
+  ui_phase?: number;
+  keyboard_shortcuts?: Array<{ keys: string; action: string }>;
+  accessibility?: { skip_link: boolean; landmarks: boolean; live_status: boolean; responsive_mobile_nav: boolean };
 };
 
 export type Conversation = { id: string; title: string; created_at: string; updated_at: string; message_count: number; matched_snippet?: string | null };

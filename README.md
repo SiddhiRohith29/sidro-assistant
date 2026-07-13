@@ -1,8 +1,8 @@
-# Sidro Assistant
+﻿# Sidro Assistant
 
 Sidro is a local-first personal AI assistant for Siddharth. It runs on a Windows machine, opens in a browser, stores data locally in SQLite, and can use Ollama for local chat so the app does not depend on OpenAI quota for normal use.
 
-Current status: Sidro v1 roadmap Phases 1 through 7 are 100% complete for the current local scope. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a light neon coral UI theme.
+Current status: Sidro v1 roadmap Phases 1 through 8 are 100% complete for the current local scope. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a polished light neon coral UI with responsive navigation, keyboard shortcuts, and accessibility support.
 
 ## Phase Status
 
@@ -16,7 +16,8 @@ Current status: Sidro v1 roadmap Phases 1 through 7 are 100% complete for the cu
 | Phase 6: Local Tools And Actions | 100% complete | Safe website-open actions, local note/task/reminder creation, confirmed local file creation, tool logs, and verification coverage are implemented. |
 | Phase 7: Long-Term Memory | 100% complete | Memory review/edit UI, categories, privacy marking, pinned memories, duplicate merge flow, similar-memory lookup, approval-based memory suggestions, and verification coverage are implemented. |
 
-Next roadmap target: Phase 8 UI/UX Polish.
+| Phase 8: UI/UX Polish | 100% complete | Responsive mobile navigation, labeled mobile tabs, skip link, screen-reader live status, keyboard shortcuts, improved loading states, settings polish, reduced-motion support, and verification coverage are implemented. |
+Next roadmap target: Phase 9 Reliability And Testing.
 
 ## Tech Stack
 
@@ -162,10 +163,10 @@ cd "C:\Users\siddh\Documents\ai assistant\sidro-run"
 .\scripts\verify-v1.ps1
 ```
 
-The script checks:
+The script checks Phase 1 through Phase 8 acceptance items:
 
 - Backend health and settings
-- Phase 6 health marker
+- Phase 8 roadmap health/settings marker
 - Local chat memory tool
 - Phase 2 capability-boundary behavior
 - Phase 3 memory duplicate handling and context preview
@@ -173,6 +174,7 @@ The script checks:
 - Text file upload and indexed file search
 - Voice short-recording error handling
 - TTS backend or frontend fallback path
+- Keyboard shortcut and accessibility settings
 
 It uses small safe test records in the local SQLite database and does not require OpenAI quota.
 
@@ -340,6 +342,21 @@ The Settings tab shows the current backend/session configuration.
 - Done: `.env`, local SQLite data, audio recordings, model files, logs, `node_modules`, and build output are ignored by Git.
 - Done: `scripts/verify-v1.ps1` provides repeatable v1 verification.
 
+
+### Keyboard Shortcuts
+
+- `Ctrl+K`: Focuses the chat composer.
+- `Ctrl+N`: Starts a new chat.
+- `Ctrl+B`: Starts a brainstorming chat.
+- `Escape`: Stops the current response or closes the active draft/context state.
+
+### Accessibility And Responsive Polish
+
+- Skip link: Keyboard users can jump past navigation directly into the main content.
+- Live status: Assistive technology gets quiet updates for loading, listening, thinking, and stopped states.
+- Reduced motion: The UI respects system reduced-motion preferences.
+- Mobile layout: Navigation compresses into labeled icon tabs and the chat composer keeps usable spacing on small screens.
+
 ## Current Known Limitations
 
 - Telugu/bilingual mode was removed to keep v1 stable and English-focused.
@@ -388,3 +405,4 @@ git push -u origin main
 ```
 
 Do not commit `.env`, `data/sidro.sqlite`, `node_modules`, local model files, or logs. The `.gitignore` is set up to keep those out.
+

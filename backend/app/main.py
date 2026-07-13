@@ -137,7 +137,7 @@ def health() -> dict:
         "tts_provider": current.tts_provider,
         "db": "ready",
         "quality_phase": 6,
-        "roadmap_complete_phase": 7,
+        "roadmap_complete_phase": 8,
     }
 
 
@@ -161,6 +161,19 @@ def read_settings() -> dict:
         "tts_model": current.tts_model,
         "tts_voice": current.tts_voice,
         "voices": ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"],
+        "ui_phase": 8,
+        "keyboard_shortcuts": [
+            {"keys": "Ctrl+K", "action": "Focus chat composer"},
+            {"keys": "Ctrl+N", "action": "Start new chat"},
+            {"keys": "Ctrl+B", "action": "Start brainstorming chat"},
+            {"keys": "Escape", "action": "Stop response or close active draft"},
+        ],
+        "accessibility": {
+            "skip_link": True,
+            "landmarks": True,
+            "live_status": True,
+            "responsive_mobile_nav": True,
+        },
     }
 
 

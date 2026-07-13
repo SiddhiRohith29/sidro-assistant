@@ -129,6 +129,7 @@ function App() {
   const [isSearchingConversations, setIsSearchingConversations] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("Sidro ready.");
   const [isLoading, setIsLoading] = useState(false);
   const [activities, setActivities] = useState<ToolActivity[]>([]);
   const [actions, setActions] = useState<Array<{ type: "open_url"; url: string; label: string }>>([]);
@@ -200,6 +201,30 @@ function App() {
   }, [conversationQuery]);
 
   useEffect(() => {
+    function handleShortcuts(event: KeyboardEvent) {
+      if (event.ctrlKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setActiveTab("chat");
+        window.setTimeout(() => promptRef.current?.focus(), 0);
+      }
+      if (event.ctrlKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        startNewChat();
+      }
+      if (event.ctrlKey && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        startBrainstormChat();
+      }
+      if (event.key === "Escape") {
+        if (isLoading) stopCurrentRequest();
+        if (editingMemoryId) setEditingMemoryId(null);
+        setContextPreview(null);
+      }
+    }
+    window.addEventListener("keydown", handleShortcuts);
+    return () => window.removeEventListener("keydown", handleShortcuts);
+  }, [isLoading, editingMemoryId]);
+  useEffect(() => {
     if (!shouldStickToBottomRef.current) return;
     window.requestAnimationFrame(() => {
       const scroller = chatScrollRef.current;
@@ -218,10 +243,12 @@ function App() {
     try {
       const loadedSettings = await api.settings();
       setSettings(loadedSettings);
+      setStatusMessage("Sidro loaded local workspace.");
       setTtsVoice(loadedSettings.tts_voice);
       await Promise.all([refreshMemories(), refreshMemorySuggestions(), refreshFiles(), refreshNotes(), refreshTasks(), refreshReminders(), refreshToday(), refreshConversations()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Sidro.");
+      setStatusMessage("Sidro could not load everything.");
     }
   }
 
@@ -325,6 +352,7 @@ function App() {
     setContextPreview(null);
     shouldStickToBottomRef.current = true;
     setIsLoading(true);
+    setStatusMessage("Sidro is thinking.");
     setMessages((current) => [...current, { role: "user", content: message }]);
 
     const controller = new AbortController();
@@ -356,11 +384,13 @@ function App() {
       ]);
       setActivities(response.tool_activities);
       setActions(response.actions);
+      setStatusMessage("Sidro response ready.");
       await Promise.all([refreshMemories(), refreshMemorySuggestions(), refreshNotes(), refreshTasks(), refreshReminders(), refreshToday(), refreshConversations()]);
       if (voiceReplies) await playReply(response.reply, response.language);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         setError("Stopped the current response.");
+        setStatusMessage("Response stopped.");
       } else {
         setError(err instanceof Error ? err.message : "Message failed.");
       }
@@ -591,6 +621,7 @@ function App() {
       startBrowserSpeechRecognition();
       setRecording(true);
       setVoiceStatus("listening");
+      setStatusMessage("Listening for voice input.");
     } catch {
       setVoiceStatus("idle");
       setError("Microphone permission was not granted.");
@@ -759,7 +790,9 @@ function App() {
 
   return (
     <main className="cosmos-app flex h-screen min-h-[640px] w-full overflow-hidden text-slate-100">
-      <aside className="cyber-sidebar hidden w-72 shrink-0 p-5 md:block">
+      <a href="#sidro-main-content" className="skip-link">Skip to main content</a>
+      <div className="sr-only" role="status" aria-live="polite">{statusMessage}</div>
+      <aside className="cyber-sidebar hidden w-72 shrink-0 p-5 md:block" aria-label="Sidro navigation">
         <div className="mb-8">
           <div className="brand-wordmark text-xl font-semibold">Sidro</div>
           <div className="mt-1 text-xs text-slate-400">Local command center</div>
@@ -824,13 +857,14 @@ function App() {
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-2 border-b border-slate-800 bg-slate-950/70 p-2 md:hidden">
+      <section id="sidro-main-content" className="flex min-w-0 flex-1 flex-col" role="main" tabIndex={-1}>
+        <div className="mobile-tabbar flex items-center gap-2 border-b border-slate-800 bg-slate-950/70 p-2 md:hidden" role="navigation" aria-label="Mobile tabs">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
               <IconButton key={tab.id} title={tab.label} onClick={() => setActiveTab(tab.id)} tone={activeTab === tab.id ? "primary" : "neutral"}>
                 <Icon size={18} />
+                <span className="mobile-tab-label">{tab.label}</span>
               </IconButton>
             );
           })}
@@ -1001,7 +1035,7 @@ function App() {
                         )}
                       </div>
                     ))}
-                    {isLoading && <div className="text-sm text-teal-200">Sidro is thinking...</div>}
+                    {isLoading && <div className="thinking-state" role="status" aria-live="polite"><span />Sidro is thinking...</div>}
                     <div ref={messagesEndRef} />
                   </div>
                 </div>
@@ -1324,6 +1358,32 @@ function App() {
                     <input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} />
                     Memory enabled
                   </label>
+                </div>
+              </div>
+              <div className="cyber-surface p-3">
+                <span className="text-xs uppercase text-slate-500">UI polish</span>
+                <div className="mt-2 break-words text-sm text-slate-100">Phase {settings?.ui_phase || 8}: responsive tabs, live status, skip link, keyboard shortcuts, and improved loading states.</div>
+              </div>
+              <div className="cyber-surface p-3 lg:col-span-2">
+                <span className="text-xs uppercase text-slate-500">Keyboard shortcuts</span>
+                <div className="settings-shortcuts mt-3">
+                  {(settings?.keyboard_shortcuts || [
+                    { keys: "Ctrl+K", action: "Focus chat composer" },
+                    { keys: "Ctrl+N", action: "Start new chat" },
+                    { keys: "Ctrl+B", action: "Start brainstorming chat" },
+                    { keys: "Escape", action: "Stop response or close active draft" }
+                  ]).map((shortcut) => (
+                    <div key={shortcut.keys}><kbd>{shortcut.keys}</kbd><span>{shortcut.action}</span></div>
+                  ))}
+                </div>
+              </div>
+              <div className="cyber-surface p-3 lg:col-span-2">
+                <span className="text-xs uppercase text-slate-500">Accessibility checks</span>
+                <div className="settings-checks mt-3">
+                  <span>Skip link</span>
+                  <span>Screen-reader status</span>
+                  <span>Keyboard navigation</span>
+                  <span>Responsive mobile tabs</span>
                 </div>
               </div>
             </div>

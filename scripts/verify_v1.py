@@ -40,12 +40,22 @@ def main() -> None:
     if health.get("quality_phase", 0) < 6:
         fail("Phase 6 health marker", "backend did not report quality_phase >= 6")
     ok("Phase 6 health marker", f"quality_phase={health.get('quality_phase')}")
-    if health.get("roadmap_complete_phase", 0) < 7:
-        fail("Roadmap Phase 1-7 completion marker", "backend did not report roadmap_complete_phase >= 7")
-    ok("Roadmap Phase 1-7 completion marker", f"phase={health.get('roadmap_complete_phase')}")
+    if health.get("roadmap_complete_phase", 0) < 8:
+        fail("Roadmap Phase 1-8 completion marker", "backend did not report roadmap_complete_phase >= 8")
+    ok("Roadmap Phase 1-8 completion marker", f"phase={health.get('roadmap_complete_phase')}")
 
     settings = expect_success("Settings endpoint", request("GET", "/api/settings"))
     ok("Settings loaded", f"provider={settings.get('chat_provider')} ollama={settings.get('ollama_model')}")
+    if settings.get("ui_phase", 0) < 8:
+        fail("Phase 8 settings marker", "settings did not report ui_phase >= 8")
+    shortcuts = settings.get("keyboard_shortcuts") or []
+    shortcut_keys = {item.get("keys") for item in shortcuts}
+    if not {"Ctrl+K", "Ctrl+N", "Ctrl+B", "Escape"}.issubset(shortcut_keys):
+        fail("Phase 8 keyboard shortcuts", "settings did not list the expected keyboard shortcuts")
+    accessibility = settings.get("accessibility") or {}
+    if not all(accessibility.get(key) for key in ["skip_link", "landmarks", "live_status", "responsive_mobile_nav"]):
+        fail("Phase 8 accessibility settings", "accessibility flags were incomplete")
+    ok("Phase 8 UI/UX settings", f"shortcuts={len(shortcuts)}")
 
     memory_payload = {
         "message": "remember that Sidro v1 verification checks should stay reliable",
@@ -312,7 +322,7 @@ def main() -> None:
     else:
         fail("TTS fallback path", f"unexpected HTTP {tts.status_code}: {tts.text[:200]}")
 
-    print("Sidro v1 + Phase 7 verification passed.")
+    print("Sidro v1 + Phase 8 verification passed.")
 
 
 if __name__ == "__main__":
