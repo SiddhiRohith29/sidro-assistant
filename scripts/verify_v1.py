@@ -40,6 +40,9 @@ def main() -> None:
     if health.get("quality_phase", 0) < 6:
         fail("Phase 6 health marker", "backend did not report quality_phase >= 6")
     ok("Phase 6 health marker", f"quality_phase={health.get('quality_phase')}")
+    if health.get("roadmap_complete_phase", 0) < 6:
+        fail("Roadmap Phase 1-6 completion marker", "backend did not report roadmap_complete_phase >= 6")
+    ok("Roadmap Phase 1-6 completion marker", f"phase={health.get('roadmap_complete_phase')}")
 
     settings = expect_success("Settings endpoint", request("GET", "/api/settings"))
     ok("Settings loaded", f"provider={settings.get('chat_provider')} ollama={settings.get('ollama_model')}")
@@ -146,6 +149,54 @@ def main() -> None:
     if "aurora-lattice" not in (match.get("matched_snippet") or "").lower():
         fail("Phase 6 conversation search", "matched snippet did not include the searched text")
     expect_success("Phase 6 conversation cleanup", request("DELETE", f"/api/conversations/{phase6_id}"))
+    task = expect_success(
+        "Phase 4 task create",
+        request("POST", "/api/tasks", json={"title": "Verify Sidro task workflow", "details": "Created by verifier"}),
+    )
+    task_id = task.get("id")
+    if not task_id:
+        fail("Phase 4 task create", "task id missing")
+    task_list = expect_success("Phase 4 task list", request("GET", "/api/tasks", params={"status": "open"}))
+    if not any(item.get("id") == task_id for item in task_list):
+        fail("Phase 4 task list", "created task was not listed")
+    task_done = expect_success("Phase 4 task complete", request("PATCH", f"/api/tasks/{task_id}", json={"status": "done"}))
+    if task_done.get("status") != "done":
+        fail("Phase 4 task complete", "task status did not update")
+
+    reminder = expect_success(
+        "Phase 4 reminder create",
+        request("POST", "/api/reminders", json={"title": "Verify Sidro internal reminder"}),
+    )
+    reminder_id = reminder.get("id")
+    if not reminder_id:
+        fail("Phase 4 reminder create", "reminder id missing")
+    reminders = expect_success("Phase 4 reminder list", request("GET", "/api/reminders", params={"status": "open"}))
+    if not any(item.get("id") == reminder_id for item in reminders):
+        fail("Phase 4 reminder list", "created reminder was not listed")
+    reminder_done = expect_success("Phase 4 reminder complete", request("PATCH", f"/api/reminders/{reminder_id}", json={"status": "done"}))
+    if reminder_done.get("status") != "done":
+        fail("Phase 4 reminder complete", "reminder status did not update")
+
+    today = expect_success("Phase 4 Today dashboard", request("GET", "/api/today"))
+    if "counts" not in today or "open_tasks" not in today or "open_reminders" not in today:
+        fail("Phase 4 Today dashboard", "today summary shape was incomplete")
+
+    preview_file = expect_success(
+        "Phase 6 safe file action preview",
+        request("POST", "/api/local-actions/create-file", json={"filename": "phase6-action-check.txt", "content": "safe action", "confirmed": False}),
+    )
+    if not preview_file.get("requires_confirmation"):
+        fail("Phase 6 safe file action preview", "file action did not require confirmation")
+    created_file = expect_success(
+        "Phase 6 safe file action confirmed",
+        request("POST", "/api/local-actions/create-file", json={"filename": "phase6-action-check.txt", "content": "safe action", "confirmed": True}),
+    )
+    if not created_file.get("created"):
+        fail("Phase 6 safe file action confirmed", "confirmed file action did not create a file")
+
+    logs = expect_success("Phase 6 tool history", request("GET", "/api/tool-logs"))
+    if not any(item.get("tool_name") in {"create_task", "create_reminder", "create_local_file"} for item in logs):
+        fail("Phase 6 tool history", "expected tool activity was not logged")
 
     note = expect_success(
         "Create note",

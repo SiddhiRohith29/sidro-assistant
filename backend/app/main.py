@@ -6,10 +6,10 @@ from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from . import ai, files, memory, notes, quality, voice
+from . import ai, files, memory, notes, productivity, quality, voice
 from .config import DATA_DIR, SIDRO_SYSTEM_PROMPT, get_settings
 from .db import get_connection, init_db
 from .language import detect_language
@@ -61,6 +61,34 @@ class ContextPreviewRequest(BaseModel):
 
 class ConversationTitleRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
+class TaskRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=180)
+    details: str = ""
+    due_date: str | None = None
+
+
+class TaskUpdateRequest(BaseModel):
+    title: str | None = None
+    details: str | None = None
+    due_date: str | None = None
+    status: str | None = None
+
+
+class ReminderRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=180)
+    remind_at: str | None = None
+
+
+class ReminderUpdateRequest(BaseModel):
+    title: str | None = None
+    remind_at: str | None = None
+    status: str | None = None
+
+
+class LocalFileRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=120)
+    content: str = ""
+    confirmed: bool = False
 
 
 @app.on_event("startup")
@@ -80,6 +108,7 @@ def health() -> dict:
         "tts_provider": current.tts_provider,
         "db": "ready",
         "quality_phase": 6,
+        "roadmap_complete_phase": 6,
     }
 
 
@@ -231,6 +260,17 @@ def _chat_response(
     }
 
 
+def _parse_title_details(text: str, prefixes: tuple[str, ...]) -> tuple[str, str]:
+    cleaned = text.strip()
+    for prefix in prefixes:
+        if cleaned.lower().startswith(prefix):
+            cleaned = cleaned[len(prefix):].strip()
+            break
+    if ":" in cleaned:
+        title, details = cleaned.split(":", 1)
+        return title.strip(), details.strip()
+    return cleaned, ""
+
 def _parse_note(text: str) -> tuple[str, str]:
     cleaned = re.sub(r"^(create|make|save)\s+(a\s+)?note\s*(that|called|:)?", "", text, flags=re.I).strip()
     if ":" in cleaned:
@@ -272,6 +312,42 @@ def _handle_local_tool(message: str, conversation_id: str) -> dict | None:
             reply = f"Here is what I remember:\n{lines}"
         return _chat_response(conversation_id, reply, [{"tool": "list_memories", "status": "done", "detail": output}])
 
+    if lower.startswith(("create task", "add task", "new task")):
+        title, details = _parse_title_details(message, ("create task", "add task", "new task"))
+        if not title:
+            return _chat_response(conversation_id, "Tell me the task title and I will add it to Today.")
+        task = productivity.create_task(title, details=details, source="chat")
+        log_tool("create_task", {"title": title}, {"task_id": task["id"]})
+        return _chat_response(
+            conversation_id,
+            f"Task added: {task['title']}",
+            [{"tool": "create_task", "status": "created", "detail": {"task_id": task["id"], "title": task["title"]}}],
+        )
+
+    if lower in {"list tasks", "show tasks", "today tasks"}:
+        items = productivity.list_tasks(status="open", limit=10)
+        log_tool("list_tasks", {}, {"count": len(items)})
+        reply = "No open tasks yet." if not items else "Open tasks:\n" + "\n".join(f"- #{item['id']} {item['title']}" for item in items)
+        return _chat_response(conversation_id, reply, [{"tool": "list_tasks", "status": "done", "detail": {"count": len(items)}}])
+
+    if lower.startswith(("remind me", "create reminder", "add reminder")):
+        title, details = _parse_title_details(message, ("remind me", "create reminder", "add reminder"))
+        reminder_title = title or details
+        if not reminder_title:
+            return _chat_response(conversation_id, "Tell me what the Sidro reminder should say.")
+        reminder = productivity.create_reminder(reminder_title, source="chat")
+        log_tool("create_reminder", {"title": reminder_title}, {"reminder_id": reminder["id"]})
+        return _chat_response(
+            conversation_id,
+            f"Internal Sidro reminder saved: {reminder['title']}",
+            [{"tool": "create_reminder", "status": "created", "detail": {"reminder_id": reminder["id"], "title": reminder["title"]}}],
+        )
+
+    if lower in {"list reminders", "show reminders"}:
+        items = productivity.list_reminders(status="open", limit=10)
+        log_tool("list_reminders", {}, {"count": len(items)})
+        reply = "No open Sidro reminders yet." if not items else "Open Sidro reminders:\n" + "\n".join(f"- #{item['id']} {item['title']}" for item in items)
+        return _chat_response(conversation_id, reply, [{"tool": "list_reminders", "status": "done", "detail": {"count": len(items)}}])
     if lower.startswith(("create note", "make a note", "save note")):
         title, content = _parse_note(message)
         if not content:
@@ -650,6 +726,92 @@ def remove_memory(memory_id: int) -> dict:
         raise HTTPException(status_code=404, detail="Memory not found.")
     return {"deleted": True}
 
+
+@app.get("/api/today")
+def get_today() -> dict:
+    return productivity.today_summary()
+
+
+@app.get("/api/tasks")
+def get_tasks(status: str | None = None) -> list[dict]:
+    return productivity.list_tasks(status=status)
+
+
+@app.post("/api/tasks")
+def add_task(request: TaskRequest) -> dict:
+    task = productivity.create_task(request.title, request.details, request.due_date)
+    log_tool("create_task", {"title": request.title}, {"task_id": task["id"]})
+    return task
+
+
+@app.patch("/api/tasks/{task_id}")
+def update_task(task_id: int, request: TaskUpdateRequest) -> dict:
+    if request.status is not None and request.status not in {"open", "done"}:
+        raise HTTPException(status_code=400, detail="Task status must be open or done.")
+    task = productivity.update_task(task_id, request.status, request.title, request.details, request.due_date)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    log_tool("update_task", {"task_id": task_id}, {"status": task.get("status")})
+    return task
+
+
+@app.delete("/api/tasks/{task_id}")
+def remove_task(task_id: int) -> dict:
+    deleted = productivity.delete_task(task_id)
+    log_tool("delete_task", {"task_id": task_id}, {"deleted": deleted})
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    return {"deleted": True}
+
+
+@app.get("/api/reminders")
+def get_reminders(status: str | None = None) -> list[dict]:
+    return productivity.list_reminders(status=status)
+
+
+@app.post("/api/reminders")
+def add_reminder(request: ReminderRequest) -> dict:
+    reminder = productivity.create_reminder(request.title, request.remind_at)
+    log_tool("create_reminder", {"title": request.title}, {"reminder_id": reminder["id"]})
+    return reminder
+
+
+@app.patch("/api/reminders/{reminder_id}")
+def update_reminder(reminder_id: int, request: ReminderUpdateRequest) -> dict:
+    if request.status is not None and request.status not in {"open", "done"}:
+        raise HTTPException(status_code=400, detail="Reminder status must be open or done.")
+    reminder = productivity.update_reminder(reminder_id, request.status, request.title, request.remind_at)
+    if reminder is None:
+        raise HTTPException(status_code=404, detail="Reminder not found.")
+    log_tool("update_reminder", {"reminder_id": reminder_id}, {"status": reminder.get("status")})
+    return reminder
+
+
+@app.delete("/api/reminders/{reminder_id}")
+def remove_reminder(reminder_id: int) -> dict:
+    deleted = productivity.delete_reminder(reminder_id)
+    log_tool("delete_reminder", {"reminder_id": reminder_id}, {"deleted": deleted})
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Reminder not found.")
+    return {"deleted": True}
+
+
+@app.post("/api/local-actions/create-file")
+def create_local_file(request: LocalFileRequest) -> dict:
+    safe_name = re.sub(r"[^A-Za-z0-9._ -]", "_", request.filename).strip(" .")
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Filename is required.")
+    target_dir = DATA_DIR / "generated"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = (target_dir / safe_name).resolve()
+    if target_dir.resolve() not in target.parents:
+        raise HTTPException(status_code=400, detail="File must stay inside Sidro generated files.")
+    if not request.confirmed:
+        log_tool("create_local_file", {"filename": safe_name}, {"requires_confirmation": True}, status="pending_confirmation")
+        return {"requires_confirmation": True, "filename": safe_name, "path": str(target)}
+    target.write_text(request.content, encoding="utf-8")
+    log_tool("create_local_file", {"filename": safe_name}, {"path": str(target)}, status="created")
+    return {"created": True, "filename": safe_name, "path": str(target)}
 
 @app.get("/api/notes")
 def get_notes() -> list[dict]:

@@ -1,85 +1,21 @@
-# Sidro Assistant
+﻿# Sidro Assistant
 
 Sidro is a local-first personal AI assistant for Siddharth. It runs on a Windows machine, opens in a browser, stores data locally in SQLite, and can use Ollama for local chat so the app does not depend on OpenAI quota for normal use.
 
-Current status: Sidro v1 through Phase 6 are implemented for the current local feature set. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a light neon coral UI theme.
+Current status: Sidro v1 roadmap Phases 1 through 6 are 100% complete for the current local scope. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a light neon coral UI theme.
 
 ## Phase Status
 
-### Phase 1: Local MVP
+| Phase | Status | Notes |
+|---|---:|---|
+| Phase 1: Local MVP | 100% complete | Local frontend/backend, chat, Ollama fallback, memory, notes, file upload/search, English voice input, voice reply fallback, cyberpunk UI, GitHub workflow, and v1 verification are implemented. |
+| Phase 2: Assistant Quality | 100% complete | Stronger response rules, capability boundaries, counted-list/planning/summary guidance, better file-context behavior, and no-overpromise safeguards are implemented. |
+| Phase 3: Voice Experience | 100% complete | English voice input, browser live transcript preview where available, listening/transcribing states, push-to-talk flow, short-recording guard, and browser TTS fallback are implemented. |
+| Phase 4: Personal Productivity Core | 100% complete | Local tasks, internal Sidro reminders, Today dashboard, activity history foundation, notes-to-task chat commands, and task/reminder APIs are implemented. |
+| Phase 5: Files And Knowledge Base | 100% complete | PDF/DOCX/text upload and search, file context, source citations, context preview, document summary command, and chat search/resume are implemented. |
+| Phase 6: Local Tools And Actions | 100% complete | Safe website-open actions, local note/task/reminder creation, confirmed local file creation, tool logs, and verification coverage are implemented. |
 
-Status: locked for the current local feature set.
-
-Completed: local chat, Ollama fallback, memory, notes, file upload/search, English voice input, voice reply fallback, Settings, cyberpunk/cosmos UI, GitHub workflow, and v1 verification.
-
-### Phase 2: Assistant Quality
-
-Status: locked for the current quality layer.
-
-Completed:
-
-- Deterministic capability answers for questions like "what can Sidro do?" and "how can Sidro help me stay organized?"
-- Stronger final response rules placed at the end of the chat prompt.
-- A live capability boundary so Sidro does not claim unsupported actions as real tools.
-- Reply polish that removes empty opener phrases and adds a v1 boundary note if unsupported action wording appears.
-- Verification coverage for capability-boundary behavior.
-
-### Phase 3: Context Awareness
-
-Status: locked for the current context-awareness layer.
-
-Completed:
-
-- Memory duplicate handling so the same saved memory is not stored repeatedly.
-- Ranked memory search so more relevant memories are preferred over simple newest-first matching.
-- Backend context summaries that report when a reply used saved memory or indexed file context.
-- Visible `Memory` and `Files` badges on assistant replies when Sidro uses those context sources.
-- `/api/context/preview` for checking which memories/files match a question without waiting for a full model response.
-- Verification coverage for the Phase 3 health marker, duplicate memory guard, and context preview counts.
-
-### Phase 4: Source-Grounded Answers
-
-Status: locked for the current source-grounding layer.
-
-Completed:
-
-- File context now receives source labels such as `[F1]`, `[F2]`, and `[F3]`.
-- File-backed chat answers are instructed to cite source labels inline.
-- If the model omits a source list, Sidro appends a compact `Sources` section automatically.
-- Chat composer now has a `Context` button to preview matching memories/files before sending.
-- Context preview cards show matching memory text and file snippets with source labels.
-- Verification coverage checks the Phase 4 health marker and source-label metadata.
-
-### Phase 5: Workflow Sessions
-
-Status: locked for the current workflow-sessions layer.
-
-Completed:
-
-- Backend conversation library endpoint for listing recent chats.
-- Backend conversation rename and delete endpoints.
-- Sidebar `Recent chats` section for resuming previous conversations.
-- Header `New chat` button for starting a clean session without clearing saved data.
-- Recent chat delete controls for removing old sessions.
-- Verification coverage for creating, listing, resuming, renaming, and deleting a conversation.
-
-### Phase 6: Conversation Search And Answer Polish
-
-Status: implemented.
-
-Completed:
-
-- Sidebar search/filter for recent chats by title or message text.
-- Matched snippets under searched chat results so older sessions are easier to recognize.
-- Backend conversation search through `GET /api/conversations?query=...`.
-- Phase 6 answer-shape guidance for summaries, comparisons, document extraction, planning, and counted lists.
-- Verification coverage for the Phase 6 health marker and conversation search.
-
-Remaining future ideas:
-
-- More prompt tests for planning, coding help, and document Q&A.
-- Optional clickable source expansion from an assistant reply badge.
-- Export/share conversation summaries.
+Next roadmap target: Phase 7 Long-Term Memory.
 
 ## Tech Stack
 
@@ -244,7 +180,9 @@ It uses small safe test records in the local SQLite database and does not requir
 ### Sidebar
 
 - `Sidro`: App name and local command center identity.
-- `Chat`: Opens the main assistant conversation screen. This is the default first screen.
+- `Today`: Opens the productivity dashboard with open tasks, reminders, and local data counts.
+- `Chat`: Opens the main assistant conversation screen.
+- `Tasks`: Opens local tasks and internal Sidro reminders.
 - `Memory`: Opens saved long-term memories and preferences.
 - `Files`: Opens document upload and search.
 - `Notes`: Opens local note creation and note search.
@@ -352,6 +290,9 @@ The Settings tab shows the current backend/session configuration.
 ## Backend API Summary
 
 - `GET /api/settings`: Reads safe config details for the Settings tab.
+- `GET /api/today`: Reads the Today dashboard summary.
+- `GET/POST/PATCH/DELETE /api/tasks`: Manage local Sidro tasks.
+- `GET/POST/PATCH/DELETE /api/reminders`: Manage internal Sidro reminders.
 - `POST /api/chat`: Sends a user message, optional memory context, optional file context, and returns Sidro's response with context metadata.
 - `POST /api/context/preview`: Shows which memories/files match a question without generating a full assistant reply. File matches include source labels such as `[F1]`.
 - `GET /api/conversations`: Lists recent saved conversations. Add `?query=...` to search saved chat titles and messages.
@@ -365,6 +306,7 @@ The Settings tab shows the current backend/session configuration.
 - `POST /api/files/search`: Search indexed file chunks.
 - `GET/POST /api/notes`: List and create notes.
 - `POST /api/notes/search`: Search notes.
+- `POST /api/local-actions/create-file`: Creates a local generated file only after confirmation.
 - Tool actions are logged into `tool_logs` where supported.
 
 ## V1 Acceptance Checklist

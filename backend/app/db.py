@@ -83,12 +83,37 @@ def init_db() -> None:
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                details TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'done')),
+                due_date TEXT,
+                source TEXT NOT NULL DEFAULT 'manual',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS reminders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                remind_at TEXT,
+                status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'done')),
+                source TEXT NOT NULL DEFAULT 'manual',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
 
             CREATE INDEX IF NOT EXISTS idx_messages_conversation
             ON messages(conversation_id, created_at);
 
             CREATE INDEX IF NOT EXISTS idx_file_chunks_file
             ON file_chunks(file_id, chunk_index);
+            CREATE INDEX IF NOT EXISTS idx_tasks_status_due
+            ON tasks(status, due_date);
+
+            CREATE INDEX IF NOT EXISTS idx_reminders_status_time
+            ON reminders(status, remind_at);
             """
         )
 

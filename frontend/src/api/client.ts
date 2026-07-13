@@ -79,6 +79,9 @@ export type Settings = {
 };
 
 export type Conversation = { id: string; title: string; created_at: string; updated_at: string; message_count: number; matched_snippet?: string | null };
+export type TaskItem = { id: number; title: string; details: string; status: "open" | "done"; due_date?: string | null; source: string; created_at: string; updated_at: string };
+export type ReminderItem = { id: number; title: string; remind_at?: string | null; status: "open" | "done"; source: string; created_at: string; updated_at: string };
+export type TodaySummary = { open_tasks: TaskItem[]; open_reminders: ReminderItem[]; counts: { tasks: number; reminders: number; notes: number; files: number; memories: number } };
 export type Memory = { id: number; content: string; source: string; created_at: string };
 export type Note = { id: number; title: string; content: string; created_at: string; updated_at: string };
 export type IndexedFile = {
@@ -131,7 +134,24 @@ export const api = {
   memories: () => request<Memory[]>("/api/memories"),
   createMemory: (content: string) => request<Memory>("/api/memories", { method: "POST", body: JSON.stringify({ content }) }),
   deleteMemory: (id: number) => request<{ deleted: boolean }>(`/api/memories/${id}`, { method: "DELETE" }),
-  notes: () => request<Note[]>("/api/notes"),
+  today: () => request<TodaySummary>("/api/today"),
+  tasks: (status = "") => request<TaskItem[]>(`/api/tasks${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  createTask: (title: string, details = "", due_date?: string) =>
+    request<TaskItem>("/api/tasks", { method: "POST", body: JSON.stringify({ title, details, due_date }) }),
+  updateTask: (id: number, body: Partial<Pick<TaskItem, "title" | "details" | "due_date" | "status">>) =>
+    request<TaskItem>(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteTask: (id: number) => request<{ deleted: boolean }>(`/api/tasks/${id}`, { method: "DELETE" }),
+  reminders: (status = "") => request<ReminderItem[]>(`/api/reminders${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  createReminder: (title: string, remind_at?: string) =>
+    request<ReminderItem>("/api/reminders", { method: "POST", body: JSON.stringify({ title, remind_at }) }),
+  updateReminder: (id: number, body: Partial<Pick<ReminderItem, "title" | "remind_at" | "status">>) =>
+    request<ReminderItem>(`/api/reminders/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteReminder: (id: number) => request<{ deleted: boolean }>(`/api/reminders/${id}`, { method: "DELETE" }),
+  createLocalFile: (filename: string, content: string, confirmed: boolean) =>
+    request<{ requires_confirmation?: boolean; created?: boolean; filename: string; path: string }>("/api/local-actions/create-file", {
+      method: "POST",
+      body: JSON.stringify({ filename, content, confirmed })
+    }),  notes: () => request<Note[]>("/api/notes"),
   createNote: (title: string, content: string) => request<Note>("/api/notes", { method: "POST", body: JSON.stringify({ title, content }) }),
   searchNotes: (query: string) => request<Note[]>("/api/notes/search", { method: "POST", body: JSON.stringify({ query }) }),
   files: () => request<IndexedFile[]>("/api/files"),

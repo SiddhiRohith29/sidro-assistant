@@ -1,11 +1,15 @@
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import {
   Bot,
+  CalendarDays,
+  CheckCircle2,
+  Clock,
   Brain,
   FileText,
   Lightbulb,
   Mic,
   NotebookPen,
+  ListTodo,
   Pause,
   Play,
   Plus,
@@ -18,9 +22,9 @@ import {
   User,
   X
 } from "lucide-react";
-import { api, ChatContextSummary, ChatMessage, Conversation, FileHit, IndexedFile, Memory, Note, Settings, ToolActivity } from "./api/client";
+import { api, ChatContextSummary, ChatMessage, Conversation, FileHit, IndexedFile, Memory, Note, ReminderItem, Settings, TaskItem, TodaySummary, ToolActivity } from "./api/client";
 
-type Tab = "chat" | "memory" | "files" | "notes" | "settings";
+type Tab = "today" | "chat" | "tasks" | "memory" | "files" | "notes" | "settings";
 type VoiceStatus = "idle" | "listening" | "transcribing";
 type SpeechResultLike = { isFinal: boolean; 0?: { transcript: string } };
 type SpeechResultListLike = { length: number; [index: number]: SpeechResultLike };
@@ -46,7 +50,9 @@ declare global {
 }
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof Bot }> = [
+  { id: "today", label: "Today", icon: CalendarDays },
   { id: "chat", label: "Chat", icon: Bot },
+  { id: "tasks", label: "Tasks", icon: ListTodo },
   { id: "memory", label: "Memory", icon: Brain },
   { id: "files", label: "Files", icon: FileText },
   { id: "notes", label: "Notes", icon: NotebookPen },
@@ -112,7 +118,7 @@ function TextButton({
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState<Tab>("chat");
+  const [activeTab, setActiveTab] = useState<Tab>("today");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -144,6 +150,14 @@ function App() {
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
   const [noteQuery, setNoteQuery] = useState("");
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [reminders, setReminders] = useState<ReminderItem[]>([]);
+  const [today, setToday] = useState<TodaySummary | null>(null);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDetails, setTaskDetails] = useState("");
+  const [taskDueDate, setTaskDueDate] = useState("");
+  const [reminderTitle, setReminderTitle] = useState("");
+  const [reminderAt, setReminderAt] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -189,7 +203,7 @@ function App() {
       const loadedSettings = await api.settings();
       setSettings(loadedSettings);
       setTtsVoice(loadedSettings.tts_voice);
-      await Promise.all([refreshMemories(), refreshFiles(), refreshNotes(), refreshConversations()]);
+      await Promise.all([refreshMemories(), refreshFiles(), refreshNotes(), refreshTasks(), refreshReminders(), refreshToday(), refreshConversations()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Sidro.");
     }
@@ -214,6 +228,17 @@ function App() {
 
   async function refreshNotes() {
     setNotes(await api.notes());
+  }
+  async function refreshTasks() {
+    setTasks(await api.tasks());
+  }
+
+  async function refreshReminders() {
+    setReminders(await api.reminders());
+  }
+
+  async function refreshToday() {
+    setToday(await api.today());
   }
 
   function speakWithBrowser(text: string) {
@@ -311,7 +336,7 @@ function App() {
       ]);
       setActivities(response.tool_activities);
       setActions(response.actions);
-      await Promise.all([refreshMemories(), refreshNotes(), refreshConversations()]);
+      await Promise.all([refreshMemories(), refreshNotes(), refreshTasks(), refreshReminders(), refreshToday(), refreshConversations()]);
       if (voiceReplies) await playReply(response.reply, response.language);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -600,6 +625,44 @@ function App() {
     setFileHits(await api.searchFiles(fileQuery));
   }
 
+  async function saveTask(event: FormEvent) {
+    event.preventDefault();
+    if (!taskTitle.trim()) return;
+    await api.createTask(taskTitle, taskDetails, taskDueDate || undefined);
+    setTaskTitle("");
+    setTaskDetails("");
+    setTaskDueDate("");
+    await Promise.all([refreshTasks(), refreshToday()]);
+  }
+
+  async function setTaskDone(task: TaskItem) {
+    await api.updateTask(task.id, { status: task.status === "done" ? "open" : "done" });
+    await Promise.all([refreshTasks(), refreshToday()]);
+  }
+
+  async function deleteTask(item: TaskItem) {
+    await api.deleteTask(item.id);
+    await Promise.all([refreshTasks(), refreshToday()]);
+  }
+
+  async function saveReminder(event: FormEvent) {
+    event.preventDefault();
+    if (!reminderTitle.trim()) return;
+    await api.createReminder(reminderTitle, reminderAt || undefined);
+    setReminderTitle("");
+    setReminderAt("");
+    await Promise.all([refreshReminders(), refreshToday()]);
+  }
+
+  async function setReminderDone(reminder: ReminderItem) {
+    await api.updateReminder(reminder.id, { status: reminder.status === "done" ? "open" : "done" });
+    await Promise.all([refreshReminders(), refreshToday()]);
+  }
+
+  async function deleteReminder(item: ReminderItem) {
+    await api.deleteReminder(item.id);
+    await Promise.all([refreshReminders(), refreshToday()]);
+  }
   async function saveNote(event: FormEvent) {
     event.preventDefault();
     if (!noteContent.trim()) return;
@@ -693,6 +756,92 @@ function App() {
           })}
         </div>
 
+        {activeTab === "today" && (
+          <Panel title="Today" subtitle="Your local command dashboard for tasks, reminders, notes, files, and memory.">
+            <div className="dashboard-grid">
+              <div className="metric-card"><span>Open tasks</span><strong>{today?.counts.tasks ?? tasks.filter((task) => task.status === "open").length}</strong></div>
+              <div className="metric-card"><span>Reminders</span><strong>{today?.counts.reminders ?? reminders.filter((item) => item.status === "open").length}</strong></div>
+              <div className="metric-card"><span>Notes</span><strong>{today?.counts.notes ?? notes.length}</strong></div>
+              <div className="metric-card"><span>Files</span><strong>{today?.counts.files ?? files.length}</strong></div>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <section className="cyber-surface p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 className="cyber-heading cyber-heading-small">Today tasks</h2>
+                  <TextButton onClick={() => setActiveTab("tasks")}>Manage</TextButton>
+                </div>
+                <div className="space-y-2">
+                  {(today?.open_tasks || tasks.filter((task) => task.status === "open")).slice(0, 6).map((task) => (
+                    <div key={task.id} className="productivity-row">
+                      <button type="button" onClick={() => void setTaskDone(task)} title="Mark task done"><CheckCircle2 size={17} /></button>
+                      <div><strong>{task.title}</strong>{task.due_date && <small>Due {task.due_date}</small>}</div>
+                    </div>
+                  ))}
+                  {(today?.open_tasks || tasks.filter((task) => task.status === "open")).length === 0 && <p className="text-sm text-slate-500">No open tasks yet.</p>}
+                </div>
+              </section>
+              <section className="cyber-surface p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 className="cyber-heading cyber-heading-small">Sidro reminders</h2>
+                  <Clock size={18} />
+                </div>
+                <div className="space-y-2">
+                  {(today?.open_reminders || reminders.filter((item) => item.status === "open")).slice(0, 6).map((reminder) => (
+                    <div key={reminder.id} className="productivity-row">
+                      <button type="button" onClick={() => void setReminderDone(reminder)} title="Mark reminder done"><CheckCircle2 size={17} /></button>
+                      <div><strong>{reminder.title}</strong>{reminder.remind_at && <small>{reminder.remind_at}</small>}</div>
+                    </div>
+                  ))}
+                  {(today?.open_reminders || reminders.filter((item) => item.status === "open")).length === 0 && <p className="text-sm text-slate-500">No open reminders yet.</p>}
+                </div>
+              </section>
+            </div>
+          </Panel>
+        )}
+
+        {activeTab === "tasks" && (
+          <Panel title="Tasks" subtitle="Create local tasks and internal Sidro reminders.">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <form onSubmit={saveTask} className="cyber-surface space-y-3 p-4">
+                <h2 className="cyber-heading cyber-heading-small">New task</h2>
+                <input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} placeholder="Task title" className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none" />
+                <textarea value={taskDetails} onChange={(event) => setTaskDetails(event.target.value)} placeholder="Details" rows={3} className="w-full resize-none rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none" />
+                <input type="date" value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none" />
+                <TextButton type="submit" disabled={!taskTitle.trim()}>Add task</TextButton>
+              </form>
+              <form onSubmit={saveReminder} className="cyber-surface space-y-3 p-4">
+                <h2 className="cyber-heading cyber-heading-small">New reminder</h2>
+                <input value={reminderTitle} onChange={(event) => setReminderTitle(event.target.value)} placeholder="Reminder title" className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none" />
+                <input type="datetime-local" value={reminderAt} onChange={(event) => setReminderAt(event.target.value)} className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none" />
+                <TextButton type="submit" disabled={!reminderTitle.trim()}>Add reminder</TextButton>
+              </form>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <section className="space-y-2">
+                <h2 className="cyber-heading cyber-heading-small">Task list</h2>
+                {tasks.map((task) => (
+                  <div key={task.id} className={`productivity-item ${task.status === "done" ? "is-done" : ""}`}>
+                    <button type="button" onClick={() => void setTaskDone(task)} title="Toggle task status"><CheckCircle2 size={18} /></button>
+                    <div className="min-w-0 flex-1"><strong>{task.title}</strong>{task.details && <p>{task.details}</p>}{task.due_date && <small>Due {task.due_date}</small>}</div>
+                    <IconButton title="Delete task" onClick={() => void deleteTask(task)} tone="danger"><Trash2 size={15} /></IconButton>
+                  </div>
+                ))}
+                {tasks.length === 0 && <p className="text-sm text-slate-500">No tasks yet.</p>}
+              </section>
+              <section className="space-y-2">
+                <h2 className="cyber-heading cyber-heading-small">Reminder list</h2>
+                {reminders.map((reminder) => (
+                  <div key={reminder.id} className={`productivity-item ${reminder.status === "done" ? "is-done" : ""}`}>
+                    <button type="button" onClick={() => void setReminderDone(reminder)} title="Toggle reminder status"><Clock size={18} /></button>
+                    <div className="min-w-0 flex-1"><strong>{reminder.title}</strong>{reminder.remind_at && <small>{reminder.remind_at}</small>}</div>
+                    <IconButton title="Delete reminder" onClick={() => void deleteReminder(reminder)} tone="danger"><Trash2 size={15} /></IconButton>
+                  </div>
+                ))}
+                {reminders.length === 0 && <p className="text-sm text-slate-500">No reminders yet.</p>}
+              </section>
+            </div>
+          </Panel>
+        )}
         {activeTab === "chat" && (
           <div className="flex min-h-0 flex-1 flex-col">
             <header className="cyber-header px-5 py-4">

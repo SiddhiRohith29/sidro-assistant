@@ -4,6 +4,7 @@ LIVE_CAPABILITIES = [
     "Chat with Sidro for planning, learning, coding help, writing, and decisions.",
     "Save and search memories that you explicitly ask Sidro to remember.",
     "Create, list, and search local notes in SQLite.",
+    "Create and manage local tasks and internal Sidro reminders.",
     "Upload and search indexed text, Markdown, PDF, and DOCX files.",
     "Use indexed file context in chat answers when Files is enabled.",
     "Transcribe English voice input with faster-whisper.",
@@ -12,8 +13,8 @@ LIVE_CAPABILITIES = [
 ]
 
 UNSUPPORTED_ACTIONS = [
-    "direct calendar scheduling",
-    "automatic reminders",
+    "direct external calendar scheduling",
+    "system-level reminders outside Sidro",
     "moving or renaming local files",
     "sending email",
     "running shell commands",
@@ -65,7 +66,7 @@ def unsupported_action_response(message: str) -> str:
         "I cannot perform that action directly in Sidro v1 yet. "
         "I can still help safely by drafting the exact plan, checklist, note, message, command explanation, or manual steps for you to review and apply.\n\n"
         "For example, I can:\n"
-        "- draft a reminder or calendar entry for you to copy;\n"
+        "- create an internal Sidro reminder, or draft an external calendar entry for you to copy;\n"
         "- create a Sidro note with the task details;\n"
         "- outline file organization steps without moving files myself;\n"
         "- write an email draft without sending it;\n"
@@ -78,7 +79,7 @@ def capability_response(message: str) -> str:
     if "organized" in lower or "organize" in lower:
         return (
             "Here are exactly 3 practical ways Sidro can help you stay organized right now:\n\n"
-            "1. **Daily plans and task lists**: Sidro can turn messy thoughts into a clear plan, checklist, or priority list. It cannot schedule your calendar automatically yet, but it can draft the exact schedule or reminder text for you to add manually.\n\n"
+            "1. **Daily plans and task lists**: Sidro can turn messy thoughts into a clear plan, checklist, or priority list. It cannot schedule an external calendar automatically yet, but it can create local Sidro tasks and internal Sidro reminders.\n\n"
             "2. **Notes and memory**: Sidro can create searchable notes and remember useful preferences when you ask it to. This helps keep recurring details, decisions, and project context from getting lost.\n\n"
             "3. **File and document lookup**: Sidro can index uploaded files, search them, and answer using file context when Files is enabled. This is useful for finding details inside notes, PDFs, docs, or project material without manually scanning everything.\n\n"
             "Best next step: use Sidro for one daily plan, one note, and one uploaded document so the system starts working around your real routine."
@@ -133,7 +134,7 @@ def final_response_rules() -> str:
         "include examples only when they make the answer actionable; state assumptions; avoid filler; "
         "do not trail off; avoid repeating the same idea; avoid duplicate schedule blocks; "
         "if there are tradeoffs, name the best recommendation; end with a useful final sentence. "
-        "Hard capability boundary: Sidro v1 can actually do these things now: chat, save/search memories, create/search notes, upload/search indexed files, transcribe English voice input, play voice replies through backend TTS or browser fallback, and suggest safe website-open actions. "
+        "Hard capability boundary: Sidro v1 can actually do these things now: chat, save/search memories, create/search notes, create/manage local tasks and internal Sidro reminders, upload/search indexed files, transcribe English voice input, play voice replies through backend TTS or browser fallback, and suggest safe website-open actions. "
         "Do not say or imply that Sidro can directly schedule calendars, move/rename local files, send email, run shell commands, control apps, or create reminders automatically. "
         "For unsupported actions, say Sidro can draft a plan, checklist, note, or instructions that Siddharth can apply manually."
     )
