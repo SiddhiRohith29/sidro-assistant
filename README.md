@@ -2,7 +2,7 @@
 
 Sidro is a local-first personal AI assistant for Siddharth. It runs on a Windows machine, opens in a browser, stores data locally in SQLite, and can use Ollama for local chat so the app does not depend on OpenAI quota for normal use.
 
-Current status: Sidro v1 local MVP is locked for the core local feature set, and Phase 2 assistant-quality work has started. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a cyberpunk/cosmos UI theme.
+Current status: Sidro v1 local MVP and Phase 2 assistant-quality work are locked, and Phase 3 context-awareness work has started. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a light neon coral UI theme.
 
 ## Phase Status
 
@@ -14,9 +14,9 @@ Completed: local chat, Ollama fallback, memory, notes, file upload/search, Engli
 
 ### Phase 2: Assistant Quality
 
-Status: in progress.
+Status: locked for the current quality layer.
 
-Implemented in this phase so far:
+Completed:
 
 - Deterministic capability answers for questions like "what can Sidro do?" and "how can Sidro help me stay organized?"
 - Stronger final response rules placed at the end of the chat prompt.
@@ -24,12 +24,24 @@ Implemented in this phase so far:
 - Reply polish that removes empty opener phrases and adds a v1 boundary note if unsupported action wording appears.
 - Verification coverage for capability-boundary behavior.
 
-Remaining Phase 2 ideas:
+### Phase 3: Context Awareness
 
-- Better file-context synthesis and citations.
-- Better memory ranking and duplicate handling.
+Status: started.
+
+Implemented in this phase so far:
+
+- Memory duplicate handling so the same saved memory is not stored repeatedly.
+- Ranked memory search so more relevant memories are preferred over simple newest-first matching.
+- Backend context summaries that report when a reply used saved memory or indexed file context.
+- Visible `Memory` and `Files` badges on assistant replies when Sidro uses those context sources.
+- `/api/context/preview` for checking which memories/files match a question without waiting for a full model response.
+- Verification coverage for the Phase 3 health marker, duplicate memory guard, and context preview counts.
+
+Remaining Phase 3 ideas:
+
+- Stronger file citations inside the written answer body.
 - More prompt tests for planning, coding help, and document Q&A.
-- A visible "used memory/file context" indicator in the chat bubble.
+- Optional manual context preview button in the chat composer.
 
 ## Tech Stack
 
@@ -178,8 +190,10 @@ cd "C:\Users\siddh\Documents\ai assistant\sidro-run"
 The script checks:
 
 - Backend health and settings
+- Phase 3 health marker
 - Local chat memory tool
 - Phase 2 capability-boundary behavior
+- Phase 3 memory duplicate handling and context preview
 - Note creation and note search
 - Text file upload and indexed file search
 - Voice short-recording error handling
@@ -206,6 +220,8 @@ The Chat tab is the main assistant console.
 - `Message area`: Shows your messages on the right and Sidro's replies on the left.
 - `User bubble`: Shows what you sent.
 - `Assistant bubble`: Shows Sidro's response.
+- `Memory` badge on a reply: Means Sidro used saved memories while answering.
+- `Files` badge on a reply: Means Sidro used indexed uploaded file context while answering.
 - `Sidro is thinking...`: Appears while the backend is generating a response.
 - `Tool activity` panel: Shows internal actions such as transcription, file search, note creation, or other safe local tools.
 - `No tools used yet`: Means the current chat has not triggered a tool call.
@@ -290,7 +306,8 @@ The Settings tab shows the current backend/session configuration.
 ## Backend API Summary
 
 - `GET /api/settings`: Reads safe config details for the Settings tab.
-- `POST /api/chat`: Sends a user message, optional memory context, optional file context, and returns Sidro's response.
+- `POST /api/chat`: Sends a user message, optional memory context, optional file context, and returns Sidro's response with context metadata.
+- `POST /api/context/preview`: Shows which memories/files match a question without generating a full assistant reply.
 - `POST /api/transcribe`: Receives microphone audio and returns transcript text.
 - `POST /api/speak`: Converts text to audio when a TTS provider is configured.
 - `GET/POST/DELETE /api/memories`: Manage saved memories.
@@ -313,6 +330,8 @@ The Settings tab shows the current backend/session configuration.
 - Done: Notes can be created and searched.
 - Done: Text, Markdown, PDF, and DOCX uploads are supported when extraction libraries can read the file.
 - Done: Indexed file search returns matching chunks and can be used by chat when Files is enabled.
+- Done: Assistant replies show Memory/Files badges when those context sources are used.
+- Done: Phase 3 context preview shows matching memory/file context without requiring a full AI answer.
 - Done: Settings explains the active provider/model/voice configuration without exposing secrets.
 - Done: `.env`, local SQLite data, audio recordings, model files, logs, `node_modules`, and build output are ignored by Git.
 - Done: `scripts/verify-v1.ps1` provides repeatable v1 verification.

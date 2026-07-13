@@ -417,6 +417,27 @@ select:focus,
   box-shadow: 0 0 0 3px rgba(255,162,162,0.24);
 }
 
+.context-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.context-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  border: 1px solid rgba(216, 95, 109, 0.28);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,162,162,0.26), rgba(235,232,255,0.28));
+  color: #672b3a;
+  padding: 0.24rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.74), 0 10px 24px rgba(216,95,109,0.10);
+}
 ::-webkit-scrollbar {
   width: 10px;
 }

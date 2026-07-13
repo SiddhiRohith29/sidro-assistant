@@ -258,7 +258,20 @@ function App() {
         controller.signal
       );
       setConversationId(response.conversation_id);
-      setMessages((current) => [...current, { role: "assistant", content: response.reply }]);
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: response.reply,
+          metadata: {
+            used_file_context: response.used_file_context,
+            used_memory_context: response.used_memory_context,
+            context_summary: response.context_summary,
+            tool_activities: response.tool_activities,
+            actions: response.actions
+          }
+        }
+      ]);
       setActivities(response.tool_activities);
       setActions(response.actions);
       await Promise.all([refreshMemories(), refreshNotes()]);
@@ -617,7 +630,8 @@ function App() {
                         <div
                           className={`message-bubble ${message.role === "user" ? "message-user" : "message-assistant"}`}
                         >
-                          {message.content}
+                          <div>{message.content}</div>
+                          {message.role === "assistant" && <ContextBadges message={message} />}
                         </div>
                         {message.role === "user" && (
                           <div className="cyber-avatar cyber-avatar-user">
@@ -868,6 +882,32 @@ function App() {
         )}
       </section>
     </main>
+  );
+}
+
+function ContextBadges({ message }: { message: ChatMessage }) {
+  const summary = message.metadata?.context_summary;
+  const usedMemory = Boolean(message.metadata?.used_memory_context || (summary?.memory_count || 0) > 0);
+  const usedFiles = Boolean(message.metadata?.used_file_context || (summary?.file_count || 0) > 0);
+  if (!usedMemory && !usedFiles) return null;
+
+  const fileNames = Array.from(new Set((summary?.files || []).map((item) => item.filename))).slice(0, 2).join(", ");
+
+  return (
+    <div className="context-badges" aria-label="Context used by this reply">
+      {usedMemory && (
+        <span className="context-badge" title="Sidro used saved memories for this answer">
+          <Brain size={13} />
+          Memory{summary?.memory_count ? ` ${summary.memory_count}` : ""}
+        </span>
+      )}
+      {usedFiles && (
+        <span className="context-badge" title={fileNames ? `Sidro used file context from ${fileNames}` : "Sidro used indexed file context for this answer"}>
+          <FileText size={13} />
+          Files{summary?.file_count ? ` ${summary.file_count}` : ""}
+        </span>
+      )}
+    </div>
   );
 }
 

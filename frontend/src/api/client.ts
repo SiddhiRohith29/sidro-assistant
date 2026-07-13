@@ -21,12 +21,27 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export type ChatContextSummary = {
+  memory_count: number;
+  file_count: number;
+  memories: Array<{ id: number; content: string; score?: number }>;
+  files: Array<{ file_id: number; filename: string; chunk_id: number; chunk_index: number; snippet: string }>;
+};
+
+export type ChatMessageMetadata = {
+  used_file_context?: boolean;
+  used_memory_context?: boolean;
+  context_summary?: ChatContextSummary;
+  tool_activities?: ToolActivity[];
+  actions?: Array<{ type: "open_url"; url: string; label: string }>;
+};
+
 export type ChatMessage = {
   id?: number;
   role: "user" | "assistant" | "system";
   content: string;
   created_at?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: ChatMessageMetadata;
 };
 
 export type ToolActivity = {
@@ -42,6 +57,8 @@ export type ChatResponse = {
   tool_activities: ToolActivity[];
   actions: Array<{ type: "open_url"; url: string; label: string }>;
   used_file_context: boolean;
+  used_memory_context: boolean;
+  context_summary: ChatContextSummary;
 };
 
 export type Settings = {
@@ -85,6 +102,8 @@ export const api = {
     request<{ conversation_id: string; messages: ChatMessage[] }>(`/api/conversations/${conversationId}/messages`),
   chat: (body: { message: string; conversation_id?: string; use_file_context: boolean; memory_enabled: boolean }, signal?: AbortSignal) =>
     request<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(body), signal }),
+  contextPreview: (body: { query: string; use_file_context: boolean; memory_enabled: boolean }) =>
+    request<ChatContextSummary>("/api/context/preview", { method: "POST", body: JSON.stringify(body) }),
   transcribe: (audio: Blob, filename = "recording.webm") => {
     const form = new FormData();
     form.append("audio", audio, filename);

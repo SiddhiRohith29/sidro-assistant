@@ -53,6 +53,12 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
 
 
+class ContextPreviewRequest(BaseModel):
+    query: str = Field(min_length=1)
+    use_file_context: bool = True
+    memory_enabled: bool = True
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
@@ -69,7 +75,7 @@ def health() -> dict:
         "stt_provider": current.stt_provider,
         "tts_provider": current.tts_provider,
         "db": "ready",
-        "quality_phase": 2,
+        "quality_phase": 3,
     }
 
 
@@ -138,18 +144,54 @@ def _recent_messages(conversation_id: str, limit: int = 20) -> list[dict[str, st
     return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
 
 
+def _context_summary(remembered: list[dict] | None = None, file_hits: list[dict] | None = None) -> dict[str, Any]:
+    memory_items = [
+        {
+            "id": item.get("id"),
+            "content": item.get("content", ""),
+            "score": item.get("match_score"),
+        }
+        for item in (remembered or [])
+    ]
+    file_items = [
+        {
+            "file_id": hit.get("file_id"),
+            "filename": hit.get("filename", "Uploaded file"),
+            "chunk_id": hit.get("chunk_id"),
+            "chunk_index": hit.get("chunk_index"),
+            "snippet": (hit.get("content", "")[:180]).strip(),
+        }
+        for hit in (file_hits or [])
+    ]
+    return {
+        "memory_count": len(memory_items),
+        "file_count": len(file_items),
+        "memories": memory_items,
+        "files": file_items,
+    }
+
+
 def _chat_response(
     conversation_id: str,
     reply: str,
     tool_activities: list[dict[str, Any]] | None = None,
     actions: list[dict[str, Any]] | None = None,
     used_file_context: bool = False,
+    used_memory_context: bool = False,
+    context_summary: dict[str, Any] | None = None,
 ) -> dict:
+    summary = context_summary or _context_summary()
     _save_message(
         conversation_id,
         "assistant",
         reply,
-        {"tool_activities": tool_activities or [], "actions": actions or [], "used_file_context": used_file_context},
+        {
+            "tool_activities": tool_activities or [],
+            "actions": actions or [],
+            "used_file_context": used_file_context,
+            "used_memory_context": used_memory_context,
+            "context_summary": summary,
+        },
     )
     return {
         "conversation_id": conversation_id,
@@ -158,6 +200,8 @@ def _chat_response(
         "tool_activities": tool_activities or [],
         "actions": actions or [],
         "used_file_context": used_file_context,
+        "used_memory_context": used_memory_context,
+        "context_summary": summary,
     }
 
 
@@ -346,6 +390,8 @@ def chat(request: ChatRequest) -> dict:
             }
         )
 
+    context_summary = _context_summary(remembered, file_hits)
+
     prompt_messages.extend(_recent_messages(conversation_id, limit=4))
     prompt_messages.append(
         {
@@ -367,12 +413,36 @@ def chat(request: ChatRequest) -> dict:
     if used_file_context and "file context" not in reply.lower():
         reply = f"Using file context, {reply}"
 
+    used_memory_context = bool(remembered)
     tool_activities = quality_activities
+    if used_memory_context:
+        tool_activities.append({"tool": "memory_context", "status": "used", "detail": {"count": len(remembered)}})
+        log_tool("search_memories", {"query": message}, {"count": len(remembered)})
     if used_file_context:
         tool_activities.append({"tool": "search_indexed_files", "status": "used", "detail": {"count": len(file_hits)}})
         log_tool("search_indexed_files", {"query": message}, {"count": len(file_hits)})
 
-    return _chat_response(conversation_id, reply, tool_activities, used_file_context=used_file_context)
+    return _chat_response(
+        conversation_id,
+        reply,
+        tool_activities,
+        used_file_context=used_file_context,
+        used_memory_context=used_memory_context,
+        context_summary=context_summary,
+    )
+
+
+@app.post("/api/context/preview")
+def context_preview(request: ContextPreviewRequest) -> dict:
+    remembered = memory.search_memories(request.query) if request.memory_enabled else []
+    file_hits = files.search_files(request.query, limit=5) if request.use_file_context else []
+    summary = _context_summary(remembered, file_hits)
+    log_tool(
+        "context_preview",
+        {"query": request.query, "memory_enabled": request.memory_enabled, "use_file_context": request.use_file_context},
+        {"memory_count": summary["memory_count"], "file_count": summary["file_count"]},
+    )
+    return summary
 
 
 @app.get("/api/conversations/latest")

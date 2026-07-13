@@ -37,6 +37,9 @@ def main() -> None:
     health = expect_success("Backend health", request("GET", "/api/health"))
     if not health.get("ok"):
         fail("Backend health", "health response did not report ok=true")
+    if health.get("quality_phase", 0) < 3:
+        fail("Phase 3 health marker", "backend did not report quality_phase >= 3")
+    ok("Phase 3 health marker", f"quality_phase={health.get('quality_phase')}")
 
     settings = expect_success("Settings endpoint", request("GET", "/api/settings"))
     ok("Settings loaded", f"provider={settings.get('chat_provider')} ollama={settings.get('ollama_model')}")
@@ -49,6 +52,12 @@ def main() -> None:
     chat_memory = expect_success("Chat local memory tool", request("POST", "/api/chat", json=memory_payload))
     if "Remembered" not in chat_memory.get("reply", ""):
         fail("Chat local memory tool", "memory tool did not return confirmation")
+
+    duplicate_memory = "Sidro phase 3 duplicate guard remembers coral compass"
+    first_memory = expect_success("Create Phase 3 memory", request("POST", "/api/memories", json={"content": duplicate_memory}))
+    second_memory = expect_success("Duplicate memory guard", request("POST", "/api/memories", json={"content": duplicate_memory}))
+    if first_memory.get("id") != second_memory.get("id"):
+        fail("Duplicate memory guard", "same memory text created a duplicate record")
     capability = expect_success(
         "Phase 2 capability boundary",
         request(
@@ -108,6 +117,16 @@ def main() -> None:
     if not any("starforge" in item.get("content", "").lower() for item in file_hits):
         fail("Search indexed files", "uploaded file was not found")
 
+    context_preview = expect_success(
+        "Phase 3 context preview",
+        request("POST", "/api/context/preview", json={"query": "coral compass starforge", "memory_enabled": True, "use_file_context": True}),
+    )
+    if context_preview.get("memory_count", 0) < 1:
+        fail("Phase 3 context preview", "memory context was not surfaced")
+    if context_preview.get("file_count", 0) < 1:
+        fail("Phase 3 context preview", "file context was not surfaced")
+    ok("Phase 3 context counts", f"memory={context_preview.get('memory_count')} files={context_preview.get('file_count')}")
+
     short_audio = request(
         "POST",
         "/api/transcribe",
@@ -125,7 +144,7 @@ def main() -> None:
     else:
         fail("TTS fallback path", f"unexpected HTTP {tts.status_code}: {tts.text[:200]}")
 
-    print("Sidro v1 verification passed.")
+    print("Sidro v1 + Phase 3 verification passed.")
 
 
 if __name__ == "__main__":
