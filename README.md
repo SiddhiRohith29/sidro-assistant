@@ -1,8 +1,8 @@
-﻿# Sidro Assistant
+# Sidro Assistant
 
 Sidro is a local-first personal AI assistant for Siddharth. It runs on a Windows machine, opens in a browser, stores data locally in SQLite, and can use Ollama for local chat so the app does not depend on OpenAI quota for normal use.
 
-Current status: Sidro v1 roadmap Phases 1 through 6 are 100% complete for the current local scope. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a light neon coral UI theme.
+Current status: Sidro v1 roadmap Phases 1 through 7 are 100% complete for the current local scope. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a light neon coral UI theme.
 
 ## Phase Status
 
@@ -14,8 +14,9 @@ Current status: Sidro v1 roadmap Phases 1 through 6 are 100% complete for the cu
 | Phase 4: Personal Productivity Core | 100% complete | Local tasks, internal Sidro reminders, Today dashboard, activity history foundation, notes-to-task chat commands, and task/reminder APIs are implemented. |
 | Phase 5: Files And Knowledge Base | 100% complete | PDF/DOCX/text upload and search, file context, source citations, context preview, document summary command, and chat search/resume are implemented. |
 | Phase 6: Local Tools And Actions | 100% complete | Safe website-open actions, local note/task/reminder creation, confirmed local file creation, tool logs, and verification coverage are implemented. |
+| Phase 7: Long-Term Memory | 100% complete | Memory review/edit UI, categories, privacy marking, pinned memories, duplicate merge flow, similar-memory lookup, approval-based memory suggestions, and verification coverage are implemented. |
 
-Next roadmap target: Phase 7 Long-Term Memory.
+Next roadmap target: Phase 8 UI/UX Polish.
 
 ## Tech Stack
 
@@ -183,7 +184,7 @@ It uses small safe test records in the local SQLite database and does not requir
 - `Today`: Opens the productivity dashboard with open tasks, reminders, and local data counts.
 - `Chat`: Opens the main assistant conversation screen.
 - `Tasks`: Opens local tasks and internal Sidro reminders.
-- `Memory`: Opens saved long-term memories and preferences.
+- `Memory`: Opens the long-term memory control center for saved memories, categories, privacy, pins, suggestions, similar-memory checks, and merge review.
 - `Files`: Opens document upload and search.
 - `Notes`: Opens local note creation and note search.
 - `Settings`: Opens session/configuration information.
@@ -302,6 +303,12 @@ The Settings tab shows the current backend/session configuration.
 - `POST /api/transcribe`: Receives microphone audio and returns transcript text.
 - `POST /api/speak`: Converts text to audio when a TTS provider is configured.
 - `GET/POST/DELETE /api/memories`: Manage saved memories.
+- `PATCH /api/memories/{memory_id}`: Edit memory content, category, privacy, and pin status.
+- `POST /api/memories/merge`: Merge duplicate memories into one reviewed memory.
+- `POST /api/memories/similar`: Find similar memories before saving or merging.
+- `GET/POST /api/memory-suggestions`: Review pending memory suggestions.
+- `POST /api/memory-suggestions/{suggestion_id}/accept`: Save a suggestion as an approved memory.
+- `POST /api/memory-suggestions/{suggestion_id}/dismiss`: Dismiss a suggestion without saving it.
 - `GET/POST /api/files`: Upload and list indexed files.
 - `POST /api/files/search`: Search indexed file chunks.
 - `GET/POST /api/notes`: List and create notes.

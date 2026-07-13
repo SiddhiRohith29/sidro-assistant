@@ -42,6 +42,35 @@ class SpeakRequest(BaseModel):
 
 class MemoryRequest(BaseModel):
     content: str = Field(min_length=1)
+    category: str | None = None
+    sensitivity: str = "normal"
+    pinned: bool = False
+
+
+class MemoryUpdateRequest(BaseModel):
+    content: str | None = None
+    category: str | None = None
+    sensitivity: str | None = None
+    pinned: bool | None = None
+
+
+class MemoryMergeRequest(BaseModel):
+    memory_ids: list[int] = Field(min_length=2)
+    content: str = Field(min_length=1)
+    category: str | None = None
+    sensitivity: str = "normal"
+    pinned: bool = False
+
+
+class MemorySuggestionRequest(BaseModel):
+    content: str = Field(min_length=1)
+    reason: str = "Manual suggestion"
+    category: str | None = None
+
+
+class MemorySuggestionAcceptRequest(BaseModel):
+    pinned: bool = False
+    sensitivity: str = "normal"
 
 
 class NoteRequest(BaseModel):
@@ -108,7 +137,7 @@ def health() -> dict:
         "tts_provider": current.tts_provider,
         "db": "ready",
         "quality_phase": 6,
-        "roadmap_complete_phase": 6,
+        "roadmap_complete_phase": 7,
     }
 
 
@@ -531,6 +560,11 @@ def chat(request: ChatRequest) -> dict:
         tool_activities.append({"tool": "search_indexed_files", "status": "used", "detail": {"count": len(file_hits)}})
         log_tool("search_indexed_files", {"query": message}, {"count": len(file_hits)})
 
+    suggestion = memory.suggest_from_message(message) if request.memory_enabled else None
+    if suggestion:
+        tool_activities.append({"tool": "memory_suggestion", "status": "pending", "detail": {"suggestion_id": suggestion["id"], "content": suggestion["content"]}})
+        log_tool("memory_suggestion", {"message": message}, {"suggestion_id": suggestion["id"]}, status="pending")
+
     return _chat_response(
         conversation_id,
         reply,
@@ -707,14 +741,26 @@ def speak(request: SpeakRequest) -> Response:
 
 
 @app.get("/api/memories")
-def get_memories() -> list[dict]:
-    return memory.list_memories()
+def get_memories(category: str | None = None, include_private: bool = True) -> list[dict]:
+    return memory.list_memories(category=category, include_private=include_private)
 
 
 @app.post("/api/memories")
 def add_memory(request: MemoryRequest) -> dict:
-    item = memory.create_memory(request.content)
-    log_tool("create_memory", {"content": request.content}, {"memory_id": item["id"]})
+    item = memory.create_memory(request.content, category=request.category, sensitivity=request.sensitivity, pinned=request.pinned)
+    log_tool("create_memory", {"content": request.content, "category": item.get("category")}, {"memory_id": item["id"]})
+    return item
+
+
+@app.patch("/api/memories/{memory_id}")
+def update_memory(memory_id: int, request: MemoryUpdateRequest) -> dict:
+    try:
+        item = memory.update_memory(memory_id, request.content, request.category, request.sensitivity, request.pinned)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if item is None:
+        raise HTTPException(status_code=404, detail="Memory not found.")
+    log_tool("update_memory", {"memory_id": memory_id}, {"category": item.get("category"), "pinned": item.get("pinned")})
     return item
 
 
@@ -725,6 +771,51 @@ def remove_memory(memory_id: int) -> dict:
     if not deleted:
         raise HTTPException(status_code=404, detail="Memory not found.")
     return {"deleted": True}
+
+
+@app.post("/api/memories/merge")
+def merge_memories(request: MemoryMergeRequest) -> dict:
+    try:
+        item = memory.merge_memories(request.memory_ids, request.content, request.category, request.sensitivity, request.pinned)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    log_tool("merge_memories", {"memory_ids": request.memory_ids}, {"memory_id": item["id"]})
+    return item
+
+
+@app.post("/api/memories/similar")
+def similar_memories(request: SearchRequest) -> list[dict]:
+    return memory.find_similar_memories(request.query)
+
+
+@app.get("/api/memory-suggestions")
+def get_memory_suggestions(status: str = "pending") -> list[dict]:
+    return memory.list_suggestions(status=status)
+
+
+@app.post("/api/memory-suggestions")
+def add_memory_suggestion(request: MemorySuggestionRequest) -> dict:
+    item = memory.create_suggestion(request.content, request.reason, request.category)
+    log_tool("memory_suggestion", {"content": request.content}, {"suggestion_id": item["id"]}, status="pending")
+    return item
+
+
+@app.post("/api/memory-suggestions/{suggestion_id}/accept")
+def accept_memory_suggestion(suggestion_id: int, request: MemorySuggestionAcceptRequest) -> dict:
+    result = memory.accept_suggestion(suggestion_id, request.pinned, request.sensitivity)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Memory suggestion not found.")
+    log_tool("accept_memory_suggestion", {"suggestion_id": suggestion_id}, {"memory_id": result["memory"]["id"]})
+    return result
+
+
+@app.post("/api/memory-suggestions/{suggestion_id}/dismiss")
+def dismiss_memory_suggestion(suggestion_id: int) -> dict:
+    item = memory.dismiss_suggestion(suggestion_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Memory suggestion not found.")
+    log_tool("dismiss_memory_suggestion", {"suggestion_id": suggestion_id}, {"status": item["status"]})
+    return item
 
 
 @app.get("/api/today")

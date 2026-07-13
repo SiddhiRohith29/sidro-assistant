@@ -40,9 +40,9 @@ def main() -> None:
     if health.get("quality_phase", 0) < 6:
         fail("Phase 6 health marker", "backend did not report quality_phase >= 6")
     ok("Phase 6 health marker", f"quality_phase={health.get('quality_phase')}")
-    if health.get("roadmap_complete_phase", 0) < 6:
-        fail("Roadmap Phase 1-6 completion marker", "backend did not report roadmap_complete_phase >= 6")
-    ok("Roadmap Phase 1-6 completion marker", f"phase={health.get('roadmap_complete_phase')}")
+    if health.get("roadmap_complete_phase", 0) < 7:
+        fail("Roadmap Phase 1-7 completion marker", "backend did not report roadmap_complete_phase >= 7")
+    ok("Roadmap Phase 1-7 completion marker", f"phase={health.get('roadmap_complete_phase')}")
 
     settings = expect_success("Settings endpoint", request("GET", "/api/settings"))
     ok("Settings loaded", f"provider={settings.get('chat_provider')} ollama={settings.get('ollama_model')}")
@@ -61,6 +61,66 @@ def main() -> None:
     second_memory = expect_success("Duplicate memory guard", request("POST", "/api/memories", json={"content": duplicate_memory}))
     if first_memory.get("id") != second_memory.get("id"):
         fail("Duplicate memory guard", "same memory text created a duplicate record")
+    phase7_memory = expect_success(
+        "Phase 7 memory create metadata",
+        request(
+            "POST",
+            "/api/memories",
+            json={
+                "content": "Sidro phase 7 remembers that I prefer memory controls with review",
+                "category": "preference",
+                "sensitivity": "private",
+                "pinned": True,
+            },
+        ),
+    )
+    phase7_memory_id = phase7_memory.get("id")
+    if phase7_memory.get("category") != "preference" or phase7_memory.get("sensitivity") != "private" or not phase7_memory.get("pinned"):
+        fail("Phase 7 memory create metadata", "metadata was not saved")
+    edited_memory = expect_success(
+        "Phase 7 memory edit",
+        request(
+            "PATCH",
+            f"/api/memories/{phase7_memory_id}",
+            json={"content": "Sidro phase 7 edited memory preference", "category": "workflow", "sensitivity": "normal", "pinned": False},
+        ),
+    )
+    if edited_memory.get("category") != "workflow" or edited_memory.get("sensitivity") != "normal" or edited_memory.get("pinned"):
+        fail("Phase 7 memory edit", "memory edit did not persist metadata")
+    similar = expect_success("Phase 7 similar memories", request("POST", "/api/memories/similar", json={"query": "Sidro phase 7 edited memory preference"}))
+    if not any(item.get("id") == phase7_memory_id for item in similar):
+        fail("Phase 7 similar memories", "similar search did not find edited memory")
+
+    merge_a = expect_success("Phase 7 merge source A", request("POST", "/api/memories", json={"content": "Phase 7 merge source alpha", "category": "project"}))
+    merge_b = expect_success("Phase 7 merge source B", request("POST", "/api/memories", json={"content": "Phase 7 merge source beta", "category": "project"}))
+    merged = expect_success(
+        "Phase 7 memory merge",
+        request(
+            "POST",
+            "/api/memories/merge",
+            json={"memory_ids": [merge_a.get("id"), merge_b.get("id")], "content": "Phase 7 merged project memory", "category": "project", "pinned": True},
+        ),
+    )
+    if merged.get("category") != "project" or not merged.get("pinned"):
+        fail("Phase 7 memory merge", "merged memory metadata was wrong")
+
+    suggestion = expect_success(
+        "Phase 7 memory suggestion create",
+        request("POST", "/api/memory-suggestions", json={"content": "I prefer Phase 7 suggestions to require approval", "category": "preference"}),
+    )
+    suggestions = expect_success("Phase 7 memory suggestion list", request("GET", "/api/memory-suggestions"))
+    if not any(item.get("id") == suggestion.get("id") for item in suggestions):
+        fail("Phase 7 memory suggestion list", "pending suggestion was not listed")
+    accepted = expect_success("Phase 7 memory suggestion accept", request("POST", f"/api/memory-suggestions/{suggestion.get('id')}/accept", json={"pinned": True}))
+    if not accepted.get("memory", {}).get("id"):
+        fail("Phase 7 memory suggestion accept", "suggestion did not create a memory")
+    dismiss = expect_success(
+        "Phase 7 memory suggestion dismiss setup",
+        request("POST", "/api/memory-suggestions", json={"content": "I prefer Phase 7 dismiss testing", "category": "preference"}),
+    )
+    dismissed = expect_success("Phase 7 memory suggestion dismiss", request("POST", f"/api/memory-suggestions/{dismiss.get('id')}/dismiss"))
+    if dismissed.get("status") != "dismissed":
+        fail("Phase 7 memory suggestion dismiss", "suggestion was not dismissed")
     capability = expect_success(
         "Phase 2 capability boundary",
         request(
@@ -252,7 +312,7 @@ def main() -> None:
     else:
         fail("TTS fallback path", f"unexpected HTTP {tts.status_code}: {tts.text[:200]}")
 
-    print("Sidro v1 + Phase 6 verification passed.")
+    print("Sidro v1 + Phase 7 verification passed.")
 
 
 if __name__ == "__main__":

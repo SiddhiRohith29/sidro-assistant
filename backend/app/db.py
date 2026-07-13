@@ -41,7 +41,21 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 content TEXT NOT NULL,
                 source TEXT NOT NULL DEFAULT 'manual',
-                created_at TEXT NOT NULL
+                category TEXT NOT NULL DEFAULT 'general',
+                sensitivity TEXT NOT NULL DEFAULT 'normal' CHECK(sensitivity IN ('normal', 'private')),
+                pinned INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS memory_suggestions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'general',
+                reason TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'dismissed')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS files (
@@ -114,6 +128,36 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_reminders_status_time
             ON reminders(status, remind_at);
+
+            CREATE INDEX IF NOT EXISTS idx_memories_category
+            ON memories(category, sensitivity);
+
+            CREATE INDEX IF NOT EXISTS idx_memory_suggestions_status
+            ON memory_suggestions(status, created_at);
+            """
+        )
+
+        memory_columns = {row["name"] for row in conn.execute("PRAGMA table_info(memories)").fetchall()}
+        if "category" not in memory_columns:
+            conn.execute("ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'general'")
+        if "sensitivity" not in memory_columns:
+            conn.execute("ALTER TABLE memories ADD COLUMN sensitivity TEXT NOT NULL DEFAULT 'normal'")
+        if "pinned" not in memory_columns:
+            conn.execute("ALTER TABLE memories ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        if "updated_at" not in memory_columns:
+            conn.execute("ALTER TABLE memories ADD COLUMN updated_at TEXT")
+            conn.execute("UPDATE memories SET updated_at = created_at WHERE updated_at IS NULL")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memory_suggestions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'general',
+                reason TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'dismissed')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
             """
         )
 

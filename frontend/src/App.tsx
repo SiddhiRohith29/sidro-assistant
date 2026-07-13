@@ -22,7 +22,7 @@ import {
   User,
   X
 } from "lucide-react";
-import { api, ChatContextSummary, ChatMessage, Conversation, FileHit, IndexedFile, Memory, Note, ReminderItem, Settings, TaskItem, TodaySummary, ToolActivity } from "./api/client";
+import { api, ChatContextSummary, ChatMessage, Conversation, FileHit, IndexedFile, Memory, MemorySuggestion, Note, ReminderItem, Settings, TaskItem, TodaySummary, ToolActivity } from "./api/client";
 
 type Tab = "today" | "chat" | "tasks" | "memory" | "files" | "notes" | "settings";
 type VoiceStatus = "idle" | "listening" | "transcribing";
@@ -48,6 +48,8 @@ declare global {
     webkitSpeechRecognition?: LocalSpeechRecognitionConstructor;
   }
 }
+
+const memoryCategories = ["general", "preference", "project", "personal", "workflow", "voice"];
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof Bot }> = [
   { id: "today", label: "Today", icon: CalendarDays },
@@ -143,6 +145,20 @@ function App() {
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [memoryDraft, setMemoryDraft] = useState("");
+  const [memoryCategory, setMemoryCategory] = useState("general");
+  const [memorySensitivity, setMemorySensitivity] = useState<"normal" | "private">("normal");
+  const [memoryPinned, setMemoryPinned] = useState(false);
+  const [memoryFilter, setMemoryFilter] = useState("");
+  const [memorySuggestions, setMemorySuggestions] = useState<MemorySuggestion[]>([]);
+  const [selectedMemoryIds, setSelectedMemoryIds] = useState<number[]>([]);
+  const [mergeDraft, setMergeDraft] = useState("");
+  const [similarMemoryQuery, setSimilarMemoryQuery] = useState("");
+  const [similarMemories, setSimilarMemories] = useState<Memory[]>([]);
+  const [editingMemoryId, setEditingMemoryId] = useState<number | null>(null);
+  const [editMemoryDraft, setEditMemoryDraft] = useState("");
+  const [editMemoryCategory, setEditMemoryCategory] = useState("general");
+  const [editMemorySensitivity, setEditMemorySensitivity] = useState<"normal" | "private">("normal");
+  const [editMemoryPinned, setEditMemoryPinned] = useState(false);
   const [files, setFiles] = useState<IndexedFile[]>([]);
   const [fileHits, setFileHits] = useState<FileHit[]>([]);
   const [fileQuery, setFileQuery] = useState("");
@@ -203,7 +219,7 @@ function App() {
       const loadedSettings = await api.settings();
       setSettings(loadedSettings);
       setTtsVoice(loadedSettings.tts_voice);
-      await Promise.all([refreshMemories(), refreshFiles(), refreshNotes(), refreshTasks(), refreshReminders(), refreshToday(), refreshConversations()]);
+      await Promise.all([refreshMemories(), refreshMemorySuggestions(), refreshFiles(), refreshNotes(), refreshTasks(), refreshReminders(), refreshToday(), refreshConversations()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Sidro.");
     }
@@ -218,8 +234,12 @@ function App() {
     }
   }
 
-  async function refreshMemories() {
-    setMemories(await api.memories());
+  async function refreshMemories(category = memoryFilter) {
+    setMemories(await api.memories(category));
+  }
+
+  async function refreshMemorySuggestions() {
+    setMemorySuggestions(await api.memorySuggestions());
   }
 
   async function refreshFiles() {
@@ -336,7 +356,7 @@ function App() {
       ]);
       setActivities(response.tool_activities);
       setActions(response.actions);
-      await Promise.all([refreshMemories(), refreshNotes(), refreshTasks(), refreshReminders(), refreshToday(), refreshConversations()]);
+      await Promise.all([refreshMemories(), refreshMemorySuggestions(), refreshNotes(), refreshTasks(), refreshReminders(), refreshToday(), refreshConversations()]);
       if (voiceReplies) await playReply(response.reply, response.language);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -596,14 +616,74 @@ function App() {
   async function saveMemory(event: FormEvent) {
     event.preventDefault();
     if (!memoryDraft.trim()) return;
-    await api.createMemory(memoryDraft);
+    await api.createMemory(memoryDraft, memoryCategory, memorySensitivity, memoryPinned);
     setMemoryDraft("");
-    await refreshMemories();
+    setMemoryCategory("general");
+    setMemorySensitivity("normal");
+    setMemoryPinned(false);
+    await Promise.all([refreshMemories(), refreshToday()]);
   }
 
   async function deleteMemory(id: number) {
     await api.deleteMemory(id);
+    setSelectedMemoryIds((current) => current.filter((item) => item !== id));
+    await Promise.all([refreshMemories(), refreshToday()]);
+  }
+
+  function startEditMemory(item: Memory) {
+    setEditingMemoryId(item.id);
+    setEditMemoryDraft(item.content);
+    setEditMemoryCategory(item.category || "general");
+    setEditMemorySensitivity(item.sensitivity || "normal");
+    setEditMemoryPinned(Boolean(item.pinned));
+  }
+
+  async function saveEditedMemory(event: FormEvent) {
+    event.preventDefault();
+    if (!editingMemoryId || !editMemoryDraft.trim()) return;
+    await api.updateMemory(editingMemoryId, {
+      content: editMemoryDraft,
+      category: editMemoryCategory,
+      sensitivity: editMemorySensitivity,
+      pinned: editMemoryPinned
+    });
+    setEditingMemoryId(null);
+    setEditMemoryDraft("");
     await refreshMemories();
+  }
+
+  async function toggleMemoryPinned(item: Memory) {
+    await api.updateMemory(item.id, { pinned: !item.pinned });
+    await refreshMemories();
+  }
+
+  function toggleMemorySelection(id: number) {
+    setSelectedMemoryIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  async function mergeSelectedMemories(event: FormEvent) {
+    event.preventDefault();
+    if (selectedMemoryIds.length < 2 || !mergeDraft.trim()) return;
+    await api.mergeMemories(selectedMemoryIds, mergeDraft, memoryCategory, memorySensitivity, memoryPinned);
+    setSelectedMemoryIds([]);
+    setMergeDraft("");
+    await Promise.all([refreshMemories(), refreshToday()]);
+  }
+
+  async function findSimilarMemories(event: FormEvent) {
+    event.preventDefault();
+    if (!similarMemoryQuery.trim()) return;
+    setSimilarMemories(await api.similarMemories(similarMemoryQuery));
+  }
+
+  async function acceptSuggestion(item: MemorySuggestion) {
+    await api.acceptMemorySuggestion(item.id, false, "normal");
+    await Promise.all([refreshMemories(), refreshMemorySuggestions(), refreshToday()]);
+  }
+
+  async function dismissSuggestion(item: MemorySuggestion) {
+    await api.dismissMemorySuggestion(item.id);
+    await refreshMemorySuggestions();
   }
 
   async function uploadFile(fileList: FileList | null) {
@@ -1023,27 +1103,101 @@ function App() {
         )}
 
         {activeTab === "memory" && (
-          <Panel title="Memory" subtitle="Saved long-term preferences and facts.">
-            <form onSubmit={saveMemory} className="flex gap-2">
-              <input
-                value={memoryDraft}
-                onChange={(event) => setMemoryDraft(event.target.value)}
-                placeholder="Remember that..."
-                className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-teal-400"
-              />
-              <IconButton title="Save memory" type="submit" tone="primary">
-                <Plus size={18} />
-              </IconButton>
-            </form>
-            <div className="space-y-2">
-              {memories.map((item) => (
-                <div key={item.id} className="flex items-start gap-3 rounded-md border border-slate-800 bg-slate-900/80 p-3">
-                  <div className="flex-1 text-sm text-slate-100">{item.content}</div>
-                  <IconButton title="Delete memory" onClick={() => void deleteMemory(item.id)} tone="danger">
-                    <Trash2 size={16} />
-                  </IconButton>
+          <Panel title="Memory" subtitle="Review, edit, pin, categorize, merge, and approve long-term memories.">
+            <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+              <form onSubmit={saveMemory} className="cyber-surface space-y-3 p-4">
+                <h2 className="cyber-heading cyber-heading-small">Save memory</h2>
+                <textarea
+                  value={memoryDraft}
+                  onChange={(event) => setMemoryDraft(event.target.value)}
+                  placeholder="Remember that..."
+                  rows={3}
+                  className="w-full resize-none rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none"
+                />
+                <div className="memory-control-grid">
+                  <select value={memoryCategory} onChange={(event) => setMemoryCategory(event.target.value)}>
+                    {memoryCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                  </select>
+                  <select value={memorySensitivity} onChange={(event) => setMemorySensitivity(event.target.value as "normal" | "private")}>
+                    <option value="normal">normal</option>
+                    <option value="private">private</option>
+                  </select>
+                  <label className="memory-toggle"><input type="checkbox" checked={memoryPinned} onChange={(event) => setMemoryPinned(event.target.checked)} />Pinned</label>
                 </div>
-              ))}
+                <TextButton type="submit" disabled={!memoryDraft.trim()}>Save memory</TextButton>
+              </form>
+
+              <section className="cyber-surface space-y-3 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="cyber-heading cyber-heading-small">Suggestions</h2>
+                  <span className="memory-pill">{memorySuggestions.length} pending</span>
+                </div>
+                {memorySuggestions.slice(0, 4).map((item) => (
+                  <div key={item.id} className="memory-suggestion">
+                    <div><strong>{item.content}</strong><small>{item.reason || item.category}</small></div>
+                    <div className="flex gap-2">
+                      <IconButton title="Accept suggestion" onClick={() => void acceptSuggestion(item)} tone="primary"><CheckCircle2 size={15} /></IconButton>
+                      <IconButton title="Dismiss suggestion" onClick={() => void dismissSuggestion(item)} tone="danger"><X size={15} /></IconButton>
+                    </div>
+                  </div>
+                ))}
+                {memorySuggestions.length === 0 && <p className="text-sm text-slate-500">No pending memory suggestions.</p>}
+              </section>
+            </div>
+
+            <div className="cyber-surface space-y-3 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="cyber-heading cyber-heading-small">Memory library</h2>
+                <select value={memoryFilter} onChange={(event) => { setMemoryFilter(event.target.value); void refreshMemories(event.target.value); }} className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none">
+                  <option value="">all categories</option>
+                  {memoryCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
+              </div>
+              <div className="memory-grid">
+                {memories.map((item) => (
+                  <article key={item.id} className={`memory-card ${item.pinned ? "is-pinned" : ""}`}>
+                    <div className="memory-card-header">
+                      <label className="memory-select"><input type="checkbox" checked={selectedMemoryIds.includes(item.id)} onChange={() => toggleMemorySelection(item.id)} />Merge</label>
+                      <div className="memory-tags"><span>{item.category}</span><span>{item.sensitivity}</span>{item.pinned && <span>pinned</span>}</div>
+                    </div>
+                    {editingMemoryId === item.id ? (
+                      <form onSubmit={saveEditedMemory} className="space-y-2">
+                        <textarea value={editMemoryDraft} onChange={(event) => setEditMemoryDraft(event.target.value)} rows={3} className="w-full resize-none rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none" />
+                        <div className="memory-control-grid">
+                          <select value={editMemoryCategory} onChange={(event) => setEditMemoryCategory(event.target.value)}>{memoryCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select>
+                          <select value={editMemorySensitivity} onChange={(event) => setEditMemorySensitivity(event.target.value as "normal" | "private")}><option value="normal">normal</option><option value="private">private</option></select>
+                          <label className="memory-toggle"><input type="checkbox" checked={editMemoryPinned} onChange={(event) => setEditMemoryPinned(event.target.checked)} />Pinned</label>
+                        </div>
+                        <div className="flex gap-2"><TextButton type="submit">Save</TextButton><TextButton onClick={() => setEditingMemoryId(null)}>Cancel</TextButton></div>
+                      </form>
+                    ) : (
+                      <>
+                        <p>{item.content}</p>
+                        <div className="memory-actions">
+                          <TextButton onClick={() => startEditMemory(item)}>Edit</TextButton>
+                          <TextButton onClick={() => void toggleMemoryPinned(item)}>{item.pinned ? "Unpin" : "Pin"}</TextButton>
+                          <IconButton title="Delete memory" onClick={() => void deleteMemory(item.id)} tone="danger"><Trash2 size={15} /></IconButton>
+                        </div>
+                      </>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <form onSubmit={mergeSelectedMemories} className="cyber-surface space-y-3 p-4">
+                <h2 className="cyber-heading cyber-heading-small">Merge duplicates</h2>
+                <p className="text-sm text-slate-500">Selected: {selectedMemoryIds.length}</p>
+                <textarea value={mergeDraft} onChange={(event) => setMergeDraft(event.target.value)} placeholder="Final merged memory..." rows={3} className="w-full resize-none rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none" />
+                <TextButton type="submit" disabled={selectedMemoryIds.length < 2 || !mergeDraft.trim()}>Merge selected</TextButton>
+              </form>
+              <form onSubmit={findSimilarMemories} className="cyber-surface space-y-3 p-4">
+                <h2 className="cyber-heading cyber-heading-small">Find similar</h2>
+                <input value={similarMemoryQuery} onChange={(event) => setSimilarMemoryQuery(event.target.value)} placeholder="Check for similar memories..." className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none" />
+                <TextButton type="submit" disabled={!similarMemoryQuery.trim()}>Find similar</TextButton>
+                <div className="space-y-2">{similarMemories.map((item) => <div key={item.id} className="memory-similar"><strong>{item.content}</strong><small>similarity {item.similarity}</small></div>)}</div>
+              </form>
             </div>
           </Panel>
         )}

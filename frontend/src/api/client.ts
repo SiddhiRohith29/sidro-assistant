@@ -82,7 +82,8 @@ export type Conversation = { id: string; title: string; created_at: string; upda
 export type TaskItem = { id: number; title: string; details: string; status: "open" | "done"; due_date?: string | null; source: string; created_at: string; updated_at: string };
 export type ReminderItem = { id: number; title: string; remind_at?: string | null; status: "open" | "done"; source: string; created_at: string; updated_at: string };
 export type TodaySummary = { open_tasks: TaskItem[]; open_reminders: ReminderItem[]; counts: { tasks: number; reminders: number; notes: number; files: number; memories: number } };
-export type Memory = { id: number; content: string; source: string; created_at: string };
+export type Memory = { id: number; content: string; source: string; category: string; sensitivity: "normal" | "private"; pinned: boolean; created_at: string; updated_at?: string; match_score?: number; similarity?: number };
+export type MemorySuggestion = { id: number; content: string; category: string; reason: string; status: "pending" | "accepted" | "dismissed"; created_at: string; updated_at: string };
 export type Note = { id: number; title: string; content: string; created_at: string; updated_at: string };
 export type IndexedFile = {
   id: number;
@@ -131,9 +132,27 @@ export const api = {
     if (!response.ok) throw new Error((await response.json()).detail || "Speech failed.");
     return response.blob();
   },
-  memories: () => request<Memory[]>("/api/memories"),
-  createMemory: (content: string) => request<Memory>("/api/memories", { method: "POST", body: JSON.stringify({ content }) }),
+  memories: (category = "", includePrivate = true) => {
+    const params = new URLSearchParams();
+    if (category) params.set("category", category);
+    params.set("include_private", String(includePrivate));
+    return request<Memory[]>(`/api/memories?${params.toString()}`);
+  },
+  createMemory: (content: string, category?: string, sensitivity = "normal", pinned = false) =>
+    request<Memory>("/api/memories", { method: "POST", body: JSON.stringify({ content, category, sensitivity, pinned }) }),
+  updateMemory: (id: number, body: Partial<Pick<Memory, "content" | "category" | "sensitivity" | "pinned">>) =>
+    request<Memory>(`/api/memories/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteMemory: (id: number) => request<{ deleted: boolean }>(`/api/memories/${id}`, { method: "DELETE" }),
+  mergeMemories: (memory_ids: number[], content: string, category?: string, sensitivity = "normal", pinned = false) =>
+    request<Memory>("/api/memories/merge", { method: "POST", body: JSON.stringify({ memory_ids, content, category, sensitivity, pinned }) }),
+  similarMemories: (query: string) => request<Memory[]>("/api/memories/similar", { method: "POST", body: JSON.stringify({ query }) }),
+  memorySuggestions: (status = "pending") => request<MemorySuggestion[]>(`/api/memory-suggestions?status=${encodeURIComponent(status)}`),
+  createMemorySuggestion: (content: string, reason = "Manual suggestion", category?: string) =>
+    request<MemorySuggestion>("/api/memory-suggestions", { method: "POST", body: JSON.stringify({ content, reason, category }) }),
+  acceptMemorySuggestion: (id: number, pinned = false, sensitivity = "normal") =>
+    request<{ suggestion: MemorySuggestion; memory: Memory }>(`/api/memory-suggestions/${id}/accept`, { method: "POST", body: JSON.stringify({ pinned, sensitivity }) }),
+  dismissMemorySuggestion: (id: number) =>
+    request<MemorySuggestion>(`/api/memory-suggestions/${id}/dismiss`, { method: "POST" }),
   today: () => request<TodaySummary>("/api/today"),
   tasks: (status = "") => request<TaskItem[]>(`/api/tasks${status ? `?status=${encodeURIComponent(status)}` : ""}`),
   createTask: (title: string, details = "", due_date?: string) =>
