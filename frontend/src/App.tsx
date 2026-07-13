@@ -3,6 +3,7 @@ import {
   Bot,
   Brain,
   FileText,
+  Lightbulb,
   Mic,
   NotebookPen,
   Pause,
@@ -296,6 +297,34 @@ function App() {
     audioChunksRef.current = [];
   }
 
+  function startBrainstormChat() {
+    stopBrowserSpeechRecognition();
+    abortRef.current?.abort();
+    const draft = "Let's brainstorm ideas for ";
+    setActiveTab("chat");
+    setConversationId(undefined);
+    setMessages([]);
+    setError("");
+    setActions([]);
+    setActivities([{ tool: "brainstorm", status: "ready", detail: "Fresh brainstorming chat started" }]);
+    setRecording(false);
+    setVoiceStatus("idle");
+    setLiveTranscript("");
+    voiceBaseInputRef.current = "";
+    browserTranscriptRef.current = "";
+    speechFinalPiecesRef.current = [];
+    audioChunksRef.current = [];
+    setComposerKey((current) => current + 1);
+    setInput(draft);
+    window.setTimeout(() => {
+      if (promptRef.current) {
+        promptRef.current.value = draft;
+        promptRef.current.focus();
+        promptRef.current.setSelectionRange(draft.length, draft.length);
+      }
+    }, 0);
+  }
+
   function stopBrowserSpeechRecognition() {
     const recognition = speechRecognitionRef.current;
     if (!recognition) return;
@@ -537,6 +566,15 @@ function App() {
                   <p className="text-xs text-slate-400">Ask, plan, search files, create notes, remember useful details.</p>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-slate-300">
+                  <button
+                    type="button"
+                    onClick={startBrainstormChat}
+                    className="cyber-text-button cyber-text-button-small inline-flex items-center gap-2"
+                    title="Start a fresh brainstorming chat"
+                  >
+                    <Lightbulb size={14} />
+                    Brainstorm
+                  </button>
                   <button
                     type="button"
                     onClick={clearChatView}
