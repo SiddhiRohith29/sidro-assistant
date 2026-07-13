@@ -2,7 +2,34 @@
 
 Sidro is a local-first personal AI assistant for Siddharth. It runs on a Windows machine, opens in a browser, stores data locally in SQLite, and can use Ollama for local chat so the app does not depend on OpenAI quota for normal use.
 
-Current status: Sidro v1 local MVP is locked for the core local feature set. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a cyberpunk/cosmos UI theme.
+Current status: Sidro v1 local MVP is locked for the core local feature set, and Phase 2 assistant-quality work has started. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a cyberpunk/cosmos UI theme.
+
+## Phase Status
+
+### Phase 1: Local MVP
+
+Status: locked for the current local feature set.
+
+Completed: local chat, Ollama fallback, memory, notes, file upload/search, English voice input, voice reply fallback, Settings, cyberpunk/cosmos UI, GitHub workflow, and v1 verification.
+
+### Phase 2: Assistant Quality
+
+Status: in progress.
+
+Implemented in this phase so far:
+
+- Deterministic capability answers for questions like "what can Sidro do?" and "how can Sidro help me stay organized?"
+- Stronger final response rules placed at the end of the chat prompt.
+- A live capability boundary so Sidro does not claim unsupported actions as real tools.
+- Reply polish that removes empty opener phrases and adds a v1 boundary note if unsupported action wording appears.
+- Verification coverage for capability-boundary behavior.
+
+Remaining Phase 2 ideas:
+
+- Better file-context synthesis and citations.
+- Better memory ranking and duplicate handling.
+- More prompt tests for planning, coding help, and document Q&A.
+- A visible "used memory/file context" indicator in the chat bubble.
 
 ## Tech Stack
 
@@ -13,7 +40,7 @@ Current status: Sidro v1 local MVP is locked for the core local feature set. The
 - Optional cloud AI: OpenAI API if `OPENAI_API_KEY` is configured
 - Local ports:
   - Frontend: `http://127.0.0.1:5180`
-  - Backend: `http://127.0.0.1:8020`
+  - Backend: `http://127.0.0.1:8021`
   - Ollama: `http://127.0.0.1:11434`
 
 ## Folder Structure
@@ -152,6 +179,7 @@ The script checks:
 
 - Backend health and settings
 - Local chat memory tool
+- Phase 2 capability-boundary behavior
 - Note creation and note search
 - Text file upload and indexed file search
 - Voice short-recording error handling

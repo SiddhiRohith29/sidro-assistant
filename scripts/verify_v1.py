@@ -4,7 +4,7 @@ from pathlib import Path
 
 import requests
 
-BASE_URL = os.getenv("SIDRO_BACKEND_URL", "http://127.0.0.1:8020").rstrip("/")
+BASE_URL = os.getenv("SIDRO_BACKEND_URL", "http://127.0.0.1:8021").rstrip("/")
 
 
 def ok(label: str, detail: str = "") -> None:
@@ -49,6 +49,40 @@ def main() -> None:
     chat_memory = expect_success("Chat local memory tool", request("POST", "/api/chat", json=memory_payload))
     if "Remembered" not in chat_memory.get("reply", ""):
         fail("Chat local memory tool", "memory tool did not return confirmation")
+    capability = expect_success(
+        "Phase 2 capability boundary",
+        request(
+            "POST",
+            "/api/chat",
+            json={
+                "message": "Give me exactly 3 practical ways Sidro can help me stay organized.",
+                "use_file_context": False,
+                "memory_enabled": False,
+            },
+        ),
+    )
+    capability_reply = capability.get("reply", "").lower()
+    if "exactly 3" not in capability_reply or "cannot schedule" not in capability_reply:
+        fail("Phase 2 capability boundary", "capability response did not clearly state v1 limits")
+    if "add this to your calendar" in capability_reply or "will remind you" in capability_reply:
+        fail("Phase 2 capability boundary", "capability response overpromised unsupported calendar/reminder actions")
+    unsupported = expect_success(
+        "Phase 2 unsupported action guard",
+        request(
+            "POST",
+            "/api/chat",
+            json={
+                "message": "Schedule a reminder for tomorrow morning to review Sidro.",
+                "use_file_context": False,
+                "memory_enabled": False,
+            },
+        ),
+    )
+    unsupported_reply = unsupported.get("reply", "").lower()
+    if "cannot perform that action directly" not in unsupported_reply or "manual checklist" not in unsupported_reply:
+        fail("Phase 2 unsupported action guard", "unsupported action response was not direct or safe")
+    if "scheduled" in unsupported_reply or "i will remind" in unsupported_reply:
+        fail("Phase 2 unsupported action guard", "unsupported action response claimed the action was performed")
 
     note = expect_success(
         "Create note",

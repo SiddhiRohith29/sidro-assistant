@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from . import ai, files, memory, notes, voice
+from . import ai, files, memory, notes, quality, voice
 from .config import DATA_DIR, SIDRO_SYSTEM_PROMPT, get_settings
 from .db import get_connection, init_db
 from .language import detect_language
@@ -69,6 +69,7 @@ def health() -> dict:
         "stt_provider": current.stt_provider,
         "tts_provider": current.tts_provider,
         "db": "ready",
+        "quality_phase": 2,
     }
 
 
@@ -310,6 +311,20 @@ def chat(request: ChatRequest) -> dict:
     if local:
         return local
 
+    if quality.is_capability_question(message):
+        return _chat_response(
+            conversation_id,
+            quality.capability_response(message),
+            [{"tool": "assistant_quality", "status": "direct", "detail": "Answered from live v1 capabilities"}],
+        )
+
+    if quality.is_unsupported_action_request(message):
+        return _chat_response(
+            conversation_id,
+            quality.unsupported_action_response(message),
+            [{"tool": "assistant_quality", "status": "blocked", "detail": "Unsupported v1 action request"}],
+        )
+
     prompt_messages: list[dict[str, str]] = [{"role": "system", "content": SIDRO_SYSTEM_PROMPT}]
 
     remembered = memory.search_memories(message) if request.memory_enabled else []
@@ -335,16 +350,7 @@ def chat(request: ChatRequest) -> dict:
     prompt_messages.append(
         {
             "role": "system",
-            "content": (
-                "Final response rules: finish the answer fully; satisfy the exact count requested by the user; "
-                "prefer concise paragraphs or 3-7 concrete bullets unless the user asks for more; "
-                "include examples only when they make the answer actionable; state assumptions; avoid filler; "
-                "do not trail off; avoid repeating the same idea; avoid duplicate schedule blocks; "
-                "if there are tradeoffs, name the best recommendation; end with a useful final sentence. "
-                "Hard capability boundary: Sidro v1 can actually do these things now: chat, save/search memories, create/search notes, upload/search indexed files, transcribe English voice input, play voice replies through backend TTS or browser fallback, and suggest safe website-open actions. "
-                "Do not say or imply that Sidro can directly schedule calendars, move/rename local files, send email, run shell commands, control apps, or create reminders automatically. "
-                "For unsupported actions, say Sidro can draft a plan, checklist, note, or instructions that Siddharth can apply manually."
-            ),
+            "content": quality.final_response_rules(),
         }
     )
 
@@ -355,11 +361,13 @@ def chat(request: ChatRequest) -> dict:
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"AI request failed: {exc}") from exc
 
+    reply, quality_activities = quality.polish_reply(reply)
+
     used_file_context = bool(file_hits)
     if used_file_context and "file context" not in reply.lower():
         reply = f"Using file context, {reply}"
 
-    tool_activities = []
+    tool_activities = quality_activities
     if used_file_context:
         tool_activities.append({"tool": "search_indexed_files", "status": "used", "detail": {"count": len(file_hits)}})
         log_tool("search_indexed_files", {"query": message}, {"count": len(file_hits)})
