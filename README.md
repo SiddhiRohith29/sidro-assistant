@@ -262,7 +262,16 @@ The Settings tab shows the current backend/session configuration.
 
 ## GitHub Daily Update Workflow
 
-After the remote repository is created and connected, daily updates should follow this pattern:
+After the remote repository is created and connected, daily updates can be pushed with the helper script:
+
+```powershell
+cd "C:\Users\siddh\Documents\ai assistant\sidro-run"
+.\scripts\daily-github-update.ps1 -Message "Improve Sidro voice input and cyberpunk UI"
+```
+
+The script checks for local changes, stages them, creates a commit, and pushes to GitHub. If there are no changes, it exits without creating an empty commit.
+
+Manual daily update commands still work too:
 
 ```powershell
 cd "C:\Users\siddh\Documents\ai assistant\sidro-run"
@@ -270,12 +279,6 @@ git status
 git add .
 git commit -m "Update Sidro daily progress"
 git push
-```
-
-A good daily commit message is specific:
-
-```powershell
-git commit -m "Improve Sidro voice input and cyberpunk UI"
 ```
 
 ## GitHub Remote Setup
