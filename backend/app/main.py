@@ -79,7 +79,7 @@ def health() -> dict:
         "stt_provider": current.stt_provider,
         "tts_provider": current.tts_provider,
         "db": "ready",
-        "quality_phase": 5,
+        "quality_phase": 6,
     }
 
 
@@ -421,6 +421,9 @@ def chat(request: ChatRequest) -> dict:
         )
 
     prompt_messages.extend(_recent_messages(conversation_id, limit=4))
+    style_guidance = quality.answer_style_guidance(message)
+    if style_guidance:
+        prompt_messages.append({"role": "system", "content": style_guidance})
     prompt_messages.append(
         {
             "role": "system",
@@ -475,13 +478,62 @@ def context_preview(request: ContextPreviewRequest) -> dict:
     return summary
 
 
+def _matched_snippet(text: str, query: str, radius: int = 70) -> str:
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    lower = cleaned.lower()
+    needle = query.lower()
+    index = lower.find(needle)
+    if index < 0:
+        return cleaned[: radius * 2].strip()
+    start = max(0, index - radius)
+    end = min(len(cleaned), index + len(query) + radius)
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(cleaned) else ""
+    return f"{prefix}{cleaned[start:end].strip()}{suffix}"
+
+
 @app.get("/api/conversations")
-def list_conversations(limit: int = 20) -> list[dict]:
+def list_conversations(limit: int = 20, query: str | None = None) -> list[dict]:
     safe_limit = max(1, min(limit, 50))
+    search = re.sub(r"\s+", " ", (query or "").strip())
     with get_connection() as conn:
+        if search:
+            like = f"%{search.lower()}%"
+            rows = conn.execute(
+                """
+                SELECT c.id, c.title, c.created_at, c.updated_at, COUNT(all_messages.id) AS message_count,
+                    (
+                        SELECT m2.content FROM messages m2
+                        WHERE m2.conversation_id = c.id AND lower(m2.content) LIKE ?
+                        ORDER BY m2.id DESC
+                        LIMIT 1
+                    ) AS matched_message
+                FROM conversations c
+                LEFT JOIN messages all_messages ON all_messages.conversation_id = c.id
+                WHERE lower(c.title) LIKE ?
+                   OR EXISTS (
+                       SELECT 1 FROM messages search_messages
+                       WHERE search_messages.conversation_id = c.id
+                         AND lower(search_messages.content) LIKE ?
+                   )
+                GROUP BY c.id
+                ORDER BY c.updated_at DESC
+                LIMIT ?
+                """,
+                (like, like, like, safe_limit),
+            ).fetchall()
+            conversations = []
+            for row in rows:
+                item = dict(row)
+                matched_message = item.pop("matched_message", "") or item["title"]
+                item["matched_snippet"] = _matched_snippet(matched_message, search)
+                conversations.append(item)
+            return conversations
+
         rows = conn.execute(
             """
-            SELECT c.id, c.title, c.created_at, c.updated_at, COUNT(m.id) AS message_count
+            SELECT c.id, c.title, c.created_at, c.updated_at, COUNT(m.id) AS message_count,
+                   NULL AS matched_snippet
             FROM conversations c
             LEFT JOIN messages m ON m.conversation_id = c.id
             GROUP BY c.id

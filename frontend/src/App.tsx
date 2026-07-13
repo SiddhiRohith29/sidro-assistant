@@ -117,6 +117,8 @@ function App() {
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationQuery, setConversationQuery] = useState("");
+  const [isSearchingConversations, setIsSearchingConversations] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -161,6 +163,13 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const handle = window.setTimeout(() => {
+      void refreshConversations(conversationQuery);
+    }, 220);
+    return () => window.clearTimeout(handle);
+  }, [conversationQuery]);
+
+  useEffect(() => {
     if (!shouldStickToBottomRef.current) return;
     window.requestAnimationFrame(() => {
       const scroller = chatScrollRef.current;
@@ -186,8 +195,13 @@ function App() {
     }
   }
 
-  async function refreshConversations() {
-    setConversations(await api.conversations());
+  async function refreshConversations(query = conversationQuery) {
+    setIsSearchingConversations(true);
+    try {
+      setConversations(await api.conversations(query));
+    } finally {
+      setIsSearchingConversations(false);
+    }
   }
 
   async function refreshMemories() {
@@ -632,13 +646,31 @@ function App() {
               <MessageSquarePlus size={15} />
             </button>
           </div>
+          <div className="conversation-search" role="search">
+            <Search size={14} />
+            <input
+              value={conversationQuery}
+              onChange={(event) => setConversationQuery(event.target.value)}
+              placeholder="Search chats..."
+              aria-label="Search recent chats"
+            />
+            {conversationQuery && (
+              <button type="button" onClick={() => setConversationQuery("")} title="Clear chat search" aria-label="Clear chat search">
+                <X size={13} />
+              </button>
+            )}
+          </div>
           <div className="conversation-list">
-            {conversations.length === 0 && <div className="conversation-empty">No saved chats yet.</div>}
+            {isSearchingConversations && <div className="conversation-empty">Searching chats...</div>}
+            {!isSearchingConversations && conversations.length === 0 && (
+              <div className="conversation-empty">{conversationQuery ? "No matching chats found." : "No saved chats yet."}</div>
+            )}
             {conversations.slice(0, 8).map((conversation) => (
               <div key={conversation.id} className={`conversation-row ${conversation.id === conversationId ? "is-current" : ""}`}>
                 <button type="button" onClick={() => void openConversation(conversation.id)} title={conversation.title}>
                   <span>{conversation.title}</span>
                   <small>{conversation.message_count} messages</small>
+                  {conversation.matched_snippet && <em>{conversation.matched_snippet}</em>}
                 </button>
                 <button type="button" onClick={() => void removeConversation(conversation.id)} title="Delete chat" aria-label="Delete chat">
                   <X size={13} />

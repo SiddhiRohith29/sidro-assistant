@@ -78,7 +78,7 @@ export type Settings = {
   voices: string[];
 };
 
-export type Conversation = { id: string; title: string; created_at: string; updated_at: string; message_count: number };
+export type Conversation = { id: string; title: string; created_at: string; updated_at: string; message_count: number; matched_snippet?: string | null };
 export type Memory = { id: number; content: string; source: string; created_at: string };
 export type Note = { id: number; title: string; content: string; created_at: string; updated_at: string };
 export type IndexedFile = {
@@ -98,7 +98,11 @@ export type FileHit = {
 
 export const api = {
   settings: () => request<Settings>("/api/settings"),
-  conversations: () => request<Conversation[]>("/api/conversations"),
+  conversations: (query = "") => {
+    const search = query.trim();
+    const suffix = search ? `?query=${encodeURIComponent(search)}` : "";
+    return request<Conversation[]>(`/api/conversations${suffix}`);
+  },
   latestConversation: () => request<Record<string, string>>("/api/conversations/latest"),
   messages: (conversationId: string) =>
     request<{ conversation_id: string; messages: ChatMessage[] }>(`/api/conversations/${conversationId}/messages`),

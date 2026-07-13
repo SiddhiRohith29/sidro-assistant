@@ -37,9 +37,9 @@ def main() -> None:
     health = expect_success("Backend health", request("GET", "/api/health"))
     if not health.get("ok"):
         fail("Backend health", "health response did not report ok=true")
-    if health.get("quality_phase", 0) < 5:
-        fail("Phase 5 health marker", "backend did not report quality_phase >= 5")
-    ok("Phase 5 health marker", f"quality_phase={health.get('quality_phase')}")
+    if health.get("quality_phase", 0) < 6:
+        fail("Phase 6 health marker", "backend did not report quality_phase >= 6")
+    ok("Phase 6 health marker", f"quality_phase={health.get('quality_phase')}")
 
     settings = expect_success("Settings endpoint", request("GET", "/api/settings"))
     ok("Settings loaded", f"provider={settings.get('chat_provider')} ollama={settings.get('ollama_model')}")
@@ -123,6 +123,29 @@ def main() -> None:
     deleted = expect_success("Phase 5 conversation delete", request("DELETE", f"/api/conversations/{workflow_id}"))
     if not deleted.get("deleted"):
         fail("Phase 5 conversation delete", "delete response did not confirm deletion")
+    phase6_phrase = "Phase 6 searchable conversation aurora-lattice"
+    phase6_chat = expect_success(
+        "Phase 6 searchable conversation create",
+        request(
+            "POST",
+            "/api/chat",
+            json={
+                "message": phase6_phrase,
+                "use_file_context": False,
+                "memory_enabled": False,
+            },
+        ),
+    )
+    phase6_id = phase6_chat.get("conversation_id")
+    if not phase6_id:
+        fail("Phase 6 searchable conversation create", "conversation id missing")
+    searched = expect_success("Phase 6 conversation search", request("GET", "/api/conversations", params={"query": "aurora-lattice"}))
+    match = next((item for item in searched if item.get("id") == phase6_id), None)
+    if not match:
+        fail("Phase 6 conversation search", "search did not return the created conversation")
+    if "aurora-lattice" not in (match.get("matched_snippet") or "").lower():
+        fail("Phase 6 conversation search", "matched snippet did not include the searched text")
+    expect_success("Phase 6 conversation cleanup", request("DELETE", f"/api/conversations/{phase6_id}"))
 
     note = expect_success(
         "Create note",
@@ -178,7 +201,7 @@ def main() -> None:
     else:
         fail("TTS fallback path", f"unexpected HTTP {tts.status_code}: {tts.text[:200]}")
 
-    print("Sidro v1 + Phase 5 verification passed.")
+    print("Sidro v1 + Phase 6 verification passed.")
 
 
 if __name__ == "__main__":

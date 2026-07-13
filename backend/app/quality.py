@@ -93,6 +93,39 @@ def capability_response(message: str) -> str:
     )
 
 
+def answer_style_guidance(message: str) -> str:
+    lower = message.lower().strip()
+    guidance: list[str] = []
+
+    if any(word in lower for word in ["summarize", "summary", "recap", "brief me"]):
+        guidance.append(
+            "For this summary request: start with a one-sentence gist, then 3-6 concrete bullets, then a short final takeaway. Do not omit important caveats."
+        )
+
+    if any(word in lower for word in ["compare", "comparison", "versus", " vs ", "difference", "better"]):
+        guidance.append(
+            "For this comparison request: identify the options, compare them across practical criteria, name the best default choice, and mention when another option wins."
+        )
+
+    if any(word in lower for word in ["extract", "find", "from the document", "from this file", "what does the file", "according to"]):
+        guidance.append(
+            "For this extraction or document question: answer only from available context when context is provided, include exact details, and cite file labels like [F1] for file-backed claims."
+        )
+
+    if any(word in lower for word in ["plan", "roadmap", "phase", "steps", "checklist"]):
+        guidance.append(
+            "For this planning request: organize the response into clear steps or phases, include acceptance checks, and call out the next action."
+        )
+
+    if re.search(r"\btop\s+\d+\b|\bexactly\s+\d+\b|\b\d+\s+(ideas|options|ways|brands|items|examples)\b", lower):
+        guidance.append(
+            "For this counted-list request: provide exactly the requested number of items, number them clearly, and make every item complete enough to stand alone."
+        )
+
+    if not guidance:
+        return ""
+    return "Phase 6 answer-shape guidance:\n" + "\n".join(f"- {item}" for item in guidance)
+
 def final_response_rules() -> str:
     return (
         "Final response rules: finish the answer fully; satisfy the exact count requested by the user; "
