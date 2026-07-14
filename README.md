@@ -2,7 +2,7 @@
 
 Sidro is a local-first personal AI assistant for Siddharth. It runs on a Windows machine, opens in a browser, stores data locally in SQLite, and can use Ollama for local chat so the app does not depend on OpenAI quota for normal use.
 
-Current status: Sidro v1 roadmap Phases 1 through 8 are 100% complete for the current local scope. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, and a polished light neon coral UI with responsive navigation, keyboard shortcuts, and accessibility support.
+Current status: Sidro v1 roadmap Phases 1 through 9 are 100% complete for the current local scope. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, a polished light neon coral UI, and Phase 9 reliability tools for health checks, backups, restore preview, migration safety, and one-click launching.
 
 ## Phase Status
 
@@ -17,7 +17,8 @@ Current status: Sidro v1 roadmap Phases 1 through 8 are 100% complete for the cu
 | Phase 7: Long-Term Memory | 100% complete | Memory review/edit UI, categories, privacy marking, pinned memories, duplicate merge flow, similar-memory lookup, approval-based memory suggestions, and verification coverage are implemented. |
 
 | Phase 8: UI/UX Polish | 100% complete | Responsive mobile navigation, labeled mobile tabs, skip link, screen-reader live status, keyboard shortcuts, improved loading states, settings polish, reduced-motion support, and verification coverage are implemented. |
-Next roadmap target: Phase 9 Reliability And Testing.
+| Phase 9: Reliability And Testing | 100% complete | Startup health checker, friendlier backend errors, one-click launcher, backup script, backup/restore API, Settings reliability panel, schema migration safety, app startup state, and Phase 9 verifier coverage are implemented. |
+Next roadmap target: Phase 10 Optional Advanced AI.
 
 ## Tech Stack
 
@@ -28,7 +29,7 @@ Next roadmap target: Phase 9 Reliability And Testing.
 - Optional cloud AI: OpenAI API if `OPENAI_API_KEY` is configured
 - Local ports:
   - Frontend: `http://127.0.0.1:5180`
-  - Backend: `http://127.0.0.1:8022`
+  - Backend: `http://127.0.0.1:8023`
   - Ollama: `http://127.0.0.1:11434`
 
 ## Folder Structure
@@ -163,10 +164,10 @@ cd "C:\Users\siddh\Documents\ai assistant\sidro-run"
 .\scripts\verify-v1.ps1
 ```
 
-The script checks Phase 1 through Phase 8 acceptance items:
+The script checks Phase 1 through Phase 9 acceptance items:
 
 - Backend health and settings
-- Phase 8 roadmap health/settings marker
+- Phase 9 roadmap health/settings marker
 - Local chat memory tool
 - Phase 2 capability-boundary behavior
 - Phase 3 memory duplicate handling and context preview
@@ -175,6 +176,7 @@ The script checks Phase 1 through Phase 8 acceptance items:
 - Voice short-recording error handling
 - TTS backend or frontend fallback path
 - Keyboard shortcut and accessibility settings
+- Phase 9 startup health, backup, restore preview, and friendly validation errors
 
 It uses small safe test records in the local SQLite database and does not require OpenAI quota.
 
@@ -357,6 +359,14 @@ The Settings tab shows the current backend/session configuration.
 - Reduced motion: The UI respects system reduced-motion preferences.
 - Mobile layout: Navigation compresses into labeled icon tabs and the chat composer keeps usable spacing on small screens.
 
+## Reliability Tools
+
+- `scripts\launch-sidro.ps1`: Starts Ollama, backend, frontend, and opens Sidro in the browser.
+- `scripts\startup-health-check.ps1`: Checks data folders, backups folder, SQLite integrity/schema, and Ollama reachability.
+- `scripts\backup-data.ps1`: Creates a timestamped local SQLite backup in `data\backups`.
+- Settings > Reliability and backup: Runs the same health check, creates backups, lists recent backups, and requires confirmation before restore.
+- Restore safety: Sidro creates a pre-restore backup before replacing the active database.
+- Migration safety: Startup records schema version 9 and the last clean startup in SQLite.
 ## Current Known Limitations
 
 - Telugu/bilingual mode was removed to keep v1 stable and English-focused.
@@ -405,4 +415,7 @@ git push -u origin main
 ```
 
 Do not commit `.env`, `data/sidro.sqlite`, `node_modules`, local model files, or logs. The `.gitignore` is set up to keep those out.
+
+
+
 

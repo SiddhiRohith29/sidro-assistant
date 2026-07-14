@@ -1,4 +1,4 @@
-# Secrets and machine-local settings
+﻿# Secrets and machine-local settings
 .env
 *.local
 
@@ -38,3 +38,7 @@ ollama-install.log
 .DS_Store
 Thumbs.db
 data/generated/*
+
+data/backups/*
+!data/backups/.gitkeep
+

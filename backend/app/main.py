@@ -1,15 +1,16 @@
-import json
+﻿import json
 import re
 import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from . import ai, files, memory, notes, productivity, quality, voice
+from . import ai, files, memory, notes, productivity, quality, reliability, voice
 from .config import DATA_DIR, SIDRO_SYSTEM_PROMPT, get_settings
 from .db import get_connection, init_db
 from .language import detect_language
@@ -120,9 +121,40 @@ class LocalFileRequest(BaseModel):
     confirmed: bool = False
 
 
+class BackupRequest(BaseModel):
+    label: str | None = None
+
+
+class RestoreBackupRequest(BaseModel):
+    filename: str = Field(min_length=1)
+    confirmed: bool = False
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Sidro could not understand this request. Check the required fields and try again.",
+            "errors": exc.errors(),
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Sidro hit a local backend error. Run the reliability check, then restart the backend if needed.",
+            "error_type": exc.__class__.__name__,
+        },
+    )
 
 
 @app.get("/api/health")
@@ -137,7 +169,7 @@ def health() -> dict:
         "tts_provider": current.tts_provider,
         "db": "ready",
         "quality_phase": 6,
-        "roadmap_complete_phase": 8,
+        "roadmap_complete_phase": 9,
     }
 
 
@@ -174,7 +206,35 @@ def read_settings() -> dict:
             "live_status": True,
             "responsive_mobile_nav": True,
         },
+        "reliability_phase": 9,
+        "reliability_features": ["startup_check", "backup", "restore_preview", "migration_safety", "friendly_errors", "one_click_launcher"],
     }
+
+
+@app.get("/api/reliability/startup-check")
+def reliability_startup_check() -> dict:
+    return reliability.startup_check()
+
+
+@app.get("/api/reliability/backups")
+def reliability_backups() -> list[dict]:
+    return reliability.list_backups()
+
+
+@app.post("/api/reliability/backups")
+def reliability_create_backup(request: BackupRequest) -> dict:
+    try:
+        return reliability.create_backup(request.label)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/reliability/restore")
+def reliability_restore_backup(request: RestoreBackupRequest) -> dict:
+    try:
+        return reliability.restore_backup(request.filename, request.confirmed)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _create_conversation(title: str) -> str:
@@ -961,4 +1021,5 @@ def search_files(request: SearchRequest) -> list[dict]:
 @app.get("/api/tool-logs")
 def tool_logs() -> list[dict]:
     return list_tool_logs()
+
 

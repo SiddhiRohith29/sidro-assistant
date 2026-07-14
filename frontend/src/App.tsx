@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+﻿import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import {
   Bot,
   CalendarDays,
@@ -22,7 +22,7 @@ import {
   User,
   X
 } from "lucide-react";
-import { api, ChatContextSummary, ChatMessage, Conversation, FileHit, IndexedFile, Memory, MemorySuggestion, Note, ReminderItem, Settings, TaskItem, TodaySummary, ToolActivity } from "./api/client";
+import { api, BackupItem, ChatContextSummary, ChatMessage, Conversation, FileHit, IndexedFile, Memory, MemorySuggestion, Note, ReliabilityReport, ReminderItem, Settings, TaskItem, TodaySummary, ToolActivity } from "./api/client";
 
 type Tab = "today" | "chat" | "tasks" | "memory" | "files" | "notes" | "settings";
 type VoiceStatus = "idle" | "listening" | "transcribing";
@@ -143,6 +143,10 @@ function App() {
   const [composerKey, setComposerKey] = useState(0);
   const [contextPreview, setContextPreview] = useState<ChatContextSummary | null>(null);
   const [isPreviewingContext, setIsPreviewingContext] = useState(false);
+  const [reliability, setReliability] = useState<ReliabilityReport | null>(null);
+  const [backups, setBackups] = useState<BackupItem[]>([]);
+  const [backupStatus, setBackupStatus] = useState("");
+  const [isReliabilityBusy, setIsReliabilityBusy] = useState(false);
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [memoryDraft, setMemoryDraft] = useState("");
@@ -246,6 +250,7 @@ function App() {
       setStatusMessage("Sidro loaded local workspace.");
       setTtsVoice(loadedSettings.tts_voice);
       await Promise.all([refreshMemories(), refreshMemorySuggestions(), refreshFiles(), refreshNotes(), refreshTasks(), refreshReminders(), refreshToday(), refreshConversations()]);
+        await refreshReliability();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load Sidro.");
       setStatusMessage("Sidro could not load everything.");
@@ -286,6 +291,48 @@ function App() {
 
   async function refreshToday() {
     setToday(await api.today());
+  }
+
+  async function refreshReliability() {
+    setIsReliabilityBusy(true);
+    try {
+      const [report, backupList] = await Promise.all([api.reliabilityCheck(), api.backups()]);
+      setReliability(report);
+      setBackups(backupList);
+      setBackupStatus(report.ok ? "Reliability checks are healthy." : "Reliability checks need attention.");
+      setStatusMessage(report.ok ? "Sidro reliability checks passed." : "Sidro reliability checks need attention.");
+    } catch (err) {
+      setBackupStatus(err instanceof Error ? err.message : "Reliability check failed.");
+    } finally {
+      setIsReliabilityBusy(false);
+    }
+  }
+
+  async function createLocalBackup() {
+    setIsReliabilityBusy(true);
+    try {
+      const backup = await api.createBackup("settings");
+      setBackups(await api.backups());
+      setBackupStatus(`Backup created: ${backup.filename}`);
+      setStatusMessage("Sidro backup created.");
+    } catch (err) {
+      setBackupStatus(err instanceof Error ? err.message : "Backup failed.");
+    } finally {
+      setIsReliabilityBusy(false);
+    }
+  }
+
+  async function restoreLocalBackup(filename: string) {
+    try {
+      const preview = await api.restoreBackup(filename, false);
+      if (preview.requires_confirmation && !window.confirm(`Restore ${filename}? Sidro will create a pre-restore backup first.`)) return;
+      const restored = await api.restoreBackup(filename, true);
+      setBackupStatus(`Restored ${restored.filename}. Pre-restore backup: ${restored.pre_restore_backup}`);
+      setStatusMessage("Sidro backup restored.");
+      await refreshReliability();
+    } catch (err) {
+      setBackupStatus(err instanceof Error ? err.message : "Restore failed.");
+    }
   }
 
   function speakWithBrowser(text: string) {
@@ -1386,6 +1433,43 @@ function App() {
                   <span>Responsive mobile tabs</span>
                 </div>
               </div>
+              <div className="cyber-surface p-3 lg:col-span-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs uppercase text-slate-500">Reliability and backup</span>
+                    <div className="mt-2 text-sm text-slate-100">Phase {settings?.reliability_phase || 9}: startup checks, safer database startup, friendly errors, backups, restore preview, and one-click launch support.</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <TextButton onClick={() => void refreshReliability()} disabled={isReliabilityBusy}>Run check</TextButton>
+                    <TextButton onClick={() => void createLocalBackup()} disabled={isReliabilityBusy}>Create backup</TextButton>
+                  </div>
+                </div>
+                {backupStatus && <div className="backup-status mt-3">{backupStatus}</div>}
+                {reliability && (
+                  <div className="reliability-grid mt-4">
+                    {reliability.checks.map((check) => (
+                      <div key={check.name} className={`reliability-check reliability-${check.status}`}>
+                        <strong>{check.name}</strong>
+                        <span>{check.detail}</span>
+                        {check.free_mb !== undefined && <small>{check.free_mb} MB free</small>}
+                        {check.user_version !== undefined && <small>Schema v{check.user_version}</small>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="backup-list mt-4">
+                  {backups.length === 0 && <span className="text-sm text-slate-400">No backups created yet.</span>}
+                  {backups.slice(0, 5).map((backup) => (
+                    <div key={backup.filename} className="backup-row">
+                      <div>
+                        <strong>{backup.filename}</strong>
+                        <span>{new Date(backup.created_at).toLocaleString()} - {Math.round(backup.size_bytes / 1024)} KB</span>
+                      </div>
+                      <TextButton onClick={() => void restoreLocalBackup(backup.filename)} disabled={isReliabilityBusy}>Restore</TextButton>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </Panel>
         )}
@@ -1476,6 +1560,10 @@ function SettingRow({ label, value }: { label: string; value: string }) {
 }
 
 export default App;
+
+
+
+
 
 
 

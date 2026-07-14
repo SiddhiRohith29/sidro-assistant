@@ -1,4 +1,4 @@
-﻿const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8022";
+﻿const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8023";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -79,6 +79,8 @@ export type Settings = {
   ui_phase?: number;
   keyboard_shortcuts?: Array<{ keys: string; action: string }>;
   accessibility?: { skip_link: boolean; landmarks: boolean; live_status: boolean; responsive_mobile_nav: boolean };
+  reliability_phase?: number;
+  reliability_features?: string[];
 };
 
 export type Conversation = { id: string; title: string; created_at: string; updated_at: string; message_count: number; matched_snippet?: string | null };
@@ -103,8 +105,47 @@ export type FileHit = {
   content: string;
 };
 
+export type ReliabilityCheckItem = {
+  name: string;
+  status: "ok" | "warning" | "fail";
+  detail: string;
+  path?: string;
+  url?: string;
+  model?: string;
+  free_mb?: number;
+  user_version?: number;
+  missing_tables?: string[];
+  counts?: Record<string, number>;
+};
+
+export type ReliabilityReport = {
+  ok: boolean;
+  phase: number;
+  generated_at: string;
+  root_dir: string;
+  checks: ReliabilityCheckItem[];
+  recommendations: string[];
+};
+
+export type BackupItem = {
+  filename: string;
+  created_at: string;
+  size_bytes: number;
+  label: string;
+  counts?: Record<string, number>;
+  path?: string;
+};
+
 export const api = {
   settings: () => request<Settings>("/api/settings"),
+  reliabilityCheck: () => request<ReliabilityReport>("/api/reliability/startup-check"),
+  backups: () => request<BackupItem[]>("/api/reliability/backups"),
+  createBackup: (label = "manual") => request<BackupItem>("/api/reliability/backups", { method: "POST", body: JSON.stringify({ label }) }),
+  restoreBackup: (filename: string, confirmed = false) =>
+    request<{ requires_confirmation?: boolean; restored?: boolean; filename: string; detail?: string; pre_restore_backup?: string }>("/api/reliability/restore", {
+      method: "POST",
+      body: JSON.stringify({ filename, confirmed })
+    }),
   conversations: (query = "") => {
     const search = query.trim();
     const suffix = search ? `?query=${encodeURIComponent(search)}` : "";
@@ -184,3 +225,5 @@ export const api = {
   },
   searchFiles: (query: string) => request<FileHit[]>("/api/files/search", { method: "POST", body: JSON.stringify({ query }) })
 };
+
+

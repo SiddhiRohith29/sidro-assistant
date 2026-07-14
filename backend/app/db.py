@@ -1,7 +1,10 @@
-import sqlite3
+﻿import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import DATA_DIR, DB_PATH
+
+SCHEMA_VERSION = 9
 
 
 def get_connection() -> sqlite3.Connection:
@@ -134,6 +137,18 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_memory_suggestions_status
             ON memory_suggestions(status, created_at);
+
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             """
         )
 
@@ -160,7 +175,18 @@ def init_db() -> None:
             )
             """
         )
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+            (SCHEMA_VERSION, "phase_9_reliability_schema", now),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES (?, ?, ?)",
+            ("last_clean_startup", now, now),
+        )
 
 
 def db_path() -> Path:
     return DB_PATH
+

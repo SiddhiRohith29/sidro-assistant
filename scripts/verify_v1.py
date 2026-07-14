@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 from pathlib import Path
 
@@ -40,9 +40,9 @@ def main() -> None:
     if health.get("quality_phase", 0) < 6:
         fail("Phase 6 health marker", "backend did not report quality_phase >= 6")
     ok("Phase 6 health marker", f"quality_phase={health.get('quality_phase')}")
-    if health.get("roadmap_complete_phase", 0) < 8:
-        fail("Roadmap Phase 1-8 completion marker", "backend did not report roadmap_complete_phase >= 8")
-    ok("Roadmap Phase 1-8 completion marker", f"phase={health.get('roadmap_complete_phase')}")
+    if health.get("roadmap_complete_phase", 0) < 9:
+        fail("Roadmap Phase 1-9 completion marker", "backend did not report roadmap_complete_phase >= 9")
+    ok("Roadmap Phase 1-9 completion marker", f"phase={health.get('roadmap_complete_phase')}")
 
     settings = expect_success("Settings endpoint", request("GET", "/api/settings"))
     ok("Settings loaded", f"provider={settings.get('chat_provider')} ollama={settings.get('ollama_model')}")
@@ -56,6 +56,39 @@ def main() -> None:
     if not all(accessibility.get(key) for key in ["skip_link", "landmarks", "live_status", "responsive_mobile_nav"]):
         fail("Phase 8 accessibility settings", "accessibility flags were incomplete")
     ok("Phase 8 UI/UX settings", f"shortcuts={len(shortcuts)}")
+    if settings.get("reliability_phase", 0) < 9:
+        fail("Phase 9 reliability settings", "settings did not report reliability_phase >= 9")
+    features = set(settings.get("reliability_features") or [])
+    expected_features = {"startup_check", "backup", "restore_preview", "migration_safety", "friendly_errors", "one_click_launcher"}
+    if not expected_features.issubset(features):
+        fail("Phase 9 reliability settings", "settings did not list the expected reliability features")
+    ok("Phase 9 reliability settings", f"features={len(features)}")
+
+    reliability = expect_success("Phase 9 startup health check", request("GET", "/api/reliability/startup-check"))
+    if reliability.get("phase", 0) < 9:
+        fail("Phase 9 startup health check", "startup report did not report phase >= 9")
+    if not reliability.get("ok"):
+        fail("Phase 9 startup health check", "startup report had a failed critical check")
+    check_names = {item.get("name") for item in reliability.get("checks", [])}
+    for required in ["Data folder", "Uploads folder", "Audio folder", "Backups folder", "SQLite database"]:
+        if required not in check_names:
+            fail("Phase 9 startup health check", f"missing check: {required}")
+    ok("Phase 9 startup health details", f"checks={len(check_names)}")
+
+    backup = expect_success("Phase 9 backup create", request("POST", "/api/reliability/backups", json={"label": "verifier"}))
+    backup_name = backup.get("filename")
+    if not backup_name or not backup_name.endswith(".sqlite"):
+        fail("Phase 9 backup create", "backup filename was missing or invalid")
+    backups = expect_success("Phase 9 backup list", request("GET", "/api/reliability/backups"))
+    if not any(item.get("filename") == backup_name for item in backups):
+        fail("Phase 9 backup list", "created backup was not listed")
+    restore_preview = expect_success("Phase 9 restore preview", request("POST", "/api/reliability/restore", json={"filename": backup_name, "confirmed": False}))
+    if not restore_preview.get("requires_confirmation"):
+        fail("Phase 9 restore preview", "restore did not require confirmation")
+    validation = request("POST", "/api/reliability/restore", json={})
+    if validation.status_code != 422 or "Sidro could not understand" not in validation.text:
+        fail("Phase 9 friendly validation error", f"unexpected response: {validation.status_code} {validation.text[:160]}")
+    ok("Phase 9 friendly validation error")
 
     memory_payload = {
         "message": "remember that Sidro v1 verification checks should stay reliable",
@@ -322,7 +355,7 @@ def main() -> None:
     else:
         fail("TTS fallback path", f"unexpected HTTP {tts.status_code}: {tts.text[:200]}")
 
-    print("Sidro v1 + Phase 8 verification passed.")
+    print("Sidro v1 + Phase 9 verification passed.")
 
 
 if __name__ == "__main__":
