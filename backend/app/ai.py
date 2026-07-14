@@ -1,9 +1,13 @@
+﻿import re
 from pathlib import Path
 
 import httpx
 from openai import OpenAI
 
 from .config import get_settings
+
+
+_MODEL_RE = re.compile(r"^[A-Za-z0-9_.:/-]{1,80}$")
 
 
 def get_client() -> OpenAI:
@@ -13,40 +17,51 @@ def get_client() -> OpenAI:
     return OpenAI(api_key=settings.openai_api_key)
 
 
-def complete_chat(messages: list[dict[str, str]]) -> str:
+def _normalize_provider(provider: str) -> str:
+    provider = provider.lower().strip()
+    if provider == "local":
+        return "ollama"
+    if provider == "hybrid":
+        return "auto"
+    return provider
+
+
+def complete_chat(messages: list[dict[str, str]], provider_override: str | None = None, model_override: str | None = None) -> str:
     settings = get_settings()
-    provider = settings.chat_provider
+    provider = _normalize_provider(provider_override or settings.chat_provider)
 
     if provider not in {"auto", "openai", "ollama"}:
-        raise RuntimeError("SIDRO_CHAT_PROVIDER must be auto, openai, or ollama.")
+        raise RuntimeError("Provider must be auto, openai, ollama, local, or hybrid.")
 
     if provider == "ollama":
-        return complete_chat_ollama(messages)
+        return complete_chat_ollama(messages, model_override)
 
     if provider == "auto" and not settings.openai_api_key:
-        return complete_chat_ollama(messages)
+        return complete_chat_ollama(messages, model_override)
 
     try:
-        return complete_chat_openai(messages)
+        return complete_chat_openai(messages, model_override)
     except Exception as exc:
         if provider == "auto":
-            return complete_chat_ollama(messages)
+            return complete_chat_ollama(messages, model_override)
         raise exc
 
 
-def complete_chat_openai(messages: list[dict[str, str]]) -> str:
+def complete_chat_openai(messages: list[dict[str, str]], model_override: str | None = None) -> str:
     settings = get_settings()
     response = get_client().chat.completions.create(
-        model=settings.chat_model,
+        model=model_override or settings.chat_model,
         messages=messages,
         temperature=0.35,
     )
     return response.choices[0].message.content or ""
 
 
-def complete_chat_ollama(messages: list[dict[str, str]]) -> str:
+def complete_chat_ollama(messages: list[dict[str, str]], model_override: str | None = None) -> str:
     settings = get_settings()
-    model = settings.ollama_model
+    model = model_override or settings.ollama_model
+    if not _MODEL_RE.match(model):
+        raise RuntimeError("Invalid Ollama model name selected.")
     payload = {
         "model": model,
         "messages": messages,
@@ -76,6 +91,40 @@ def complete_chat_ollama(messages: list[dict[str, str]]) -> str:
     return data.get("message", {}).get("content", "") or ""
 
 
+def list_ollama_models(timeout: float = 2.5) -> list[str]:
+    settings = get_settings()
+    models: list[str] = []
+    try:
+        response = httpx.get(f"{settings.ollama_base_url.rstrip('/')}/api/tags", timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+        models = [item.get("name", "") for item in payload.get("models", []) if item.get("name")]
+    except httpx.HTTPError:
+        models = []
+    if settings.ollama_model not in models:
+        models.insert(0, settings.ollama_model)
+    return list(dict.fromkeys(models))
+
+
+def routing_summary(provider_override: str | None = None, model_override: str | None = None) -> dict:
+    settings = get_settings()
+    requested = provider_override or settings.chat_provider
+    provider = _normalize_provider(requested)
+    if provider == "auto" and not settings.openai_api_key:
+        active_provider = "ollama"
+    elif provider == "auto":
+        active_provider = "openai-with-ollama-fallback"
+    else:
+        active_provider = provider
+    default_model = settings.chat_model if active_provider.startswith("openai") else settings.ollama_model
+    return {
+        "requested_provider": requested,
+        "active_provider": active_provider,
+        "model": model_override or default_model,
+        "openai_configured": bool(settings.openai_api_key),
+    }
+
+
 def transcribe_audio(path: Path) -> str:
     settings = get_settings()
     with path.open("rb") as audio_file:
@@ -97,4 +146,3 @@ def synthesize_speech(text: str, voice: str | None = None) -> bytes:
     if hasattr(response, "read"):
         return response.read()
     return response.content
-

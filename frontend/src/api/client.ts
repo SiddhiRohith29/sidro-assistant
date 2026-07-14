@@ -81,6 +81,11 @@ export type Settings = {
   accessibility?: { skip_link: boolean; landmarks: boolean; live_status: boolean; responsive_mobile_nav: boolean };
   reliability_phase?: number;
   reliability_features?: string[];
+  advanced_ai_phase?: number;
+  advanced_ai_features?: string[];
+  available_providers?: string[];
+  available_models?: string[];
+  default_search_mode?: string;
 };
 
 export type Conversation = { id: string; title: string; created_at: string; updated_at: string; message_count: number; matched_snippet?: string | null };
@@ -103,6 +108,8 @@ export type FileHit = {
   chunk_id: number;
   chunk_index: number;
   content: string;
+  search_mode?: string;
+  semantic_score?: number;
 };
 
 export type ReliabilityCheckItem = {
@@ -139,6 +146,7 @@ export type BackupItem = {
 export const api = {
   settings: () => request<Settings>("/api/settings"),
   reliabilityCheck: () => request<ReliabilityReport>("/api/reliability/startup-check"),
+  aiModels: () => request<{ providers: string[]; models: string[]; routing: { requested_provider: string; active_provider: string; model: string; openai_configured: boolean }; search_modes: string[] }>("/api/ai/models"),
   backups: () => request<BackupItem[]>("/api/reliability/backups"),
   createBackup: (label = "manual") => request<BackupItem>("/api/reliability/backups", { method: "POST", body: JSON.stringify({ label }) }),
   restoreBackup: (filename: string, confirmed = false) =>
@@ -158,9 +166,9 @@ export const api = {
     request<Conversation>(`/api/conversations/${conversationId}`, { method: "PATCH", body: JSON.stringify({ title }) }),
   deleteConversation: (conversationId: string) =>
     request<{ deleted: boolean }>(`/api/conversations/${conversationId}`, { method: "DELETE" }),
-  chat: (body: { message: string; conversation_id?: string; use_file_context: boolean; memory_enabled: boolean }, signal?: AbortSignal) =>
+  chat: (body: { message: string; conversation_id?: string; use_file_context: boolean; memory_enabled: boolean; planning_mode?: boolean; provider?: string; model?: string; search_mode?: string }, signal?: AbortSignal) =>
     request<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(body), signal }),
-  contextPreview: (body: { query: string; use_file_context: boolean; memory_enabled: boolean }) =>
+  contextPreview: (body: { query: string; use_file_context: boolean; memory_enabled: boolean; search_mode?: string }) =>
     request<ChatContextSummary>("/api/context/preview", { method: "POST", body: JSON.stringify(body) }),
   transcribe: (audio: Blob, filename = "recording.webm") => {
     const form = new FormData();
@@ -223,7 +231,8 @@ export const api = {
     form.append("file", file);
     return request<IndexedFile>("/api/files/upload", { method: "POST", body: form });
   },
-  searchFiles: (query: string) => request<FileHit[]>("/api/files/search", { method: "POST", body: JSON.stringify({ query }) })
+  searchFiles: (query: string, search_mode = "hybrid") => request<FileHit[]>("/api/files/search", { method: "POST", body: JSON.stringify({ query, search_mode }) })
 };
+
 
 

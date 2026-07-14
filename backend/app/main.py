@@ -33,6 +33,10 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
     use_file_context: bool = True
     memory_enabled: bool = True
+    planning_mode: bool = False
+    provider: str | None = None
+    model: str | None = None
+    search_mode: str = "hybrid"
 
 
 class SpeakRequest(BaseModel):
@@ -81,12 +85,14 @@ class NoteRequest(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
+    search_mode: str = "hybrid"
 
 
 class ContextPreviewRequest(BaseModel):
     query: str = Field(min_length=1)
     use_file_context: bool = True
     memory_enabled: bool = True
+    search_mode: str = "hybrid"
 
 
 class ConversationTitleRequest(BaseModel):
@@ -169,7 +175,7 @@ def health() -> dict:
         "tts_provider": current.tts_provider,
         "db": "ready",
         "quality_phase": 6,
-        "roadmap_complete_phase": 9,
+        "roadmap_complete_phase": 10,
     }
 
 
@@ -208,6 +214,11 @@ def read_settings() -> dict:
         },
         "reliability_phase": 9,
         "reliability_features": ["startup_check", "backup", "restore_preview", "migration_safety", "friendly_errors", "one_click_launcher"],
+        "advanced_ai_phase": 10,
+        "advanced_ai_features": ["model_picker", "hybrid_routing", "semantic_document_search", "planning_mode", "ask_my_documents", "advanced_verifier"],
+        "available_providers": ["auto", "ollama", "openai"],
+        "available_models": ai.list_ollama_models(),
+        "default_search_mode": "hybrid",
     }
 
 
@@ -546,6 +557,20 @@ def _handle_local_tool(message: str, conversation_id: str) -> dict | None:
     return None
 
 
+@app.get("/api/ai/models")
+def ai_models() -> dict:
+    return {
+        "providers": ["auto", "ollama", "openai"],
+        "models": ai.list_ollama_models(),
+        "routing": ai.routing_summary(),
+        "search_modes": ["hybrid", "semantic", "keyword"],
+    }
+
+
+@app.post("/api/ai/route-preview")
+def ai_route_preview(request: ChatRequest) -> dict:
+    return ai.routing_summary(request.provider, request.model)
+
 @app.post("/api/chat")
 def chat(request: ChatRequest) -> dict:
     message = request.message.strip()
@@ -581,7 +606,7 @@ def chat(request: ChatRequest) -> dict:
             {"role": "system", "content": "Useful saved memories:\n" + "\n".join(f"- {item['content']}" for item in remembered)}
         )
 
-    file_hits = files.search_files(message, limit=5) if request.use_file_context else []
+    file_hits = files.search_files(message, limit=5, mode=request.search_mode) if request.use_file_context else []
     context_summary = _context_summary(remembered, file_hits)
 
     if file_hits:
@@ -598,6 +623,13 @@ def chat(request: ChatRequest) -> dict:
             }
         )
 
+    if request.planning_mode:
+        prompt_messages.append(
+            {
+                "role": "system",
+                "content": "Phase 10 planning mode is enabled. Think like a local agent planner: clarify the goal, list assumptions, break work into ordered steps, include checkpoints, identify local Sidro tools that can help, and end with the immediate next action. Do not claim to execute tools that are not available.",
+            }
+        )
     prompt_messages.extend(_recent_messages(conversation_id, limit=4))
     style_guidance = quality.answer_style_guidance(message)
     if style_guidance:
@@ -610,7 +642,7 @@ def chat(request: ChatRequest) -> dict:
     )
 
     try:
-        reply = ai.complete_chat(prompt_messages)
+        reply = ai.complete_chat(prompt_messages, provider_override=request.provider, model_override=request.model)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -626,6 +658,10 @@ def chat(request: ChatRequest) -> dict:
 
     used_memory_context = bool(remembered)
     tool_activities = quality_activities
+    route = ai.routing_summary(request.provider, request.model)
+    tool_activities.append({"tool": "ai_routing", "status": route["active_provider"], "detail": {"model": route["model"], "planning_mode": request.planning_mode, "search_mode": request.search_mode}})
+    if request.planning_mode:
+        tool_activities.append({"tool": "planning_mode", "status": "enabled", "detail": "Phase 10 planner guidance used"})
     if used_memory_context:
         tool_activities.append({"tool": "memory_context", "status": "used", "detail": {"count": len(remembered)}})
         log_tool("search_memories", {"query": message}, {"count": len(remembered)})
@@ -651,11 +687,11 @@ def chat(request: ChatRequest) -> dict:
 @app.post("/api/context/preview")
 def context_preview(request: ContextPreviewRequest) -> dict:
     remembered = memory.search_memories(request.query) if request.memory_enabled else []
-    file_hits = files.search_files(request.query, limit=5) if request.use_file_context else []
+    file_hits = files.search_files(request.query, limit=5, mode=request.search_mode) if request.use_file_context else []
     summary = _context_summary(remembered, file_hits)
     log_tool(
         "context_preview",
-        {"query": request.query, "memory_enabled": request.memory_enabled, "use_file_context": request.use_file_context},
+        {"query": request.query, "memory_enabled": request.memory_enabled, "use_file_context": request.use_file_context, "search_mode": request.search_mode},
         {"memory_count": summary["memory_count"], "file_count": summary["file_count"]},
     )
     return summary
@@ -1013,7 +1049,7 @@ async def upload_file(file: UploadFile = File(...)) -> dict:
 
 @app.post("/api/files/search")
 def search_files(request: SearchRequest) -> list[dict]:
-    hits = files.search_files(request.query)
+    hits = files.search_files(request.query, mode=request.search_mode)
     log_tool("search_indexed_files", {"query": request.query}, {"count": len(hits)})
     return hits
 
@@ -1021,5 +1057,7 @@ def search_files(request: SearchRequest) -> list[dict]:
 @app.get("/api/tool-logs")
 def tool_logs() -> list[dict]:
     return list_tool_logs()
+
+
 
 

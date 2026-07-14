@@ -40,9 +40,9 @@ def main() -> None:
     if health.get("quality_phase", 0) < 6:
         fail("Phase 6 health marker", "backend did not report quality_phase >= 6")
     ok("Phase 6 health marker", f"quality_phase={health.get('quality_phase')}")
-    if health.get("roadmap_complete_phase", 0) < 9:
-        fail("Roadmap Phase 1-9 completion marker", "backend did not report roadmap_complete_phase >= 9")
-    ok("Roadmap Phase 1-9 completion marker", f"phase={health.get('roadmap_complete_phase')}")
+    if health.get("roadmap_complete_phase", 0) < 10:
+        fail("Roadmap Phase 1-10 completion marker", "backend did not report roadmap_complete_phase >= 10")
+    ok("Roadmap Phase 1-10 completion marker", f"phase={health.get('roadmap_complete_phase')}")
 
     settings = expect_success("Settings endpoint", request("GET", "/api/settings"))
     ok("Settings loaded", f"provider={settings.get('chat_provider')} ollama={settings.get('ollama_model')}")
@@ -63,6 +63,25 @@ def main() -> None:
     if not expected_features.issubset(features):
         fail("Phase 9 reliability settings", "settings did not list the expected reliability features")
     ok("Phase 9 reliability settings", f"features={len(features)}")
+    if settings.get("advanced_ai_phase", 0) < 10:
+        fail("Phase 10 advanced AI settings", "settings did not report advanced_ai_phase >= 10")
+    advanced_features = set(settings.get("advanced_ai_features") or [])
+    expected_advanced = {"model_picker", "hybrid_routing", "semantic_document_search", "planning_mode", "ask_my_documents", "advanced_verifier"}
+    if not expected_advanced.issubset(advanced_features):
+        fail("Phase 10 advanced AI settings", "advanced AI features were incomplete")
+    if "hybrid" != settings.get("default_search_mode"):
+        fail("Phase 10 advanced AI settings", "default search mode was not hybrid")
+    ok("Phase 10 advanced AI settings", f"features={len(advanced_features)}")
+
+    models = expect_success("Phase 10 model picker", request("GET", "/api/ai/models"))
+    if "ollama" not in models.get("providers", []) or "hybrid" not in models.get("search_modes", []):
+        fail("Phase 10 model picker", "providers or search modes were incomplete")
+    if not models.get("models"):
+        fail("Phase 10 model picker", "no model choices were returned")
+    route = expect_success("Phase 10 route preview", request("POST", "/api/ai/route-preview", json={"message": "route check", "provider": "ollama", "model": settings.get("ollama_model")}))
+    if route.get("active_provider") != "ollama":
+        fail("Phase 10 route preview", "route preview did not select ollama")
+    ok("Phase 10 model route", f"model={route.get('model')}")
 
     reliability = expect_success("Phase 9 startup health check", request("GET", "/api/reliability/startup-check"))
     if reliability.get("phase", 0) < 9:
@@ -314,7 +333,7 @@ def main() -> None:
 
     sample_text = (
         "Sidro verification sample file. The keyword starforge proves indexed file search works. "
-        "This file is safe test content for the v1 acceptance script."
+        "This file is safe test content for the v1 acceptance script. Project codename aurora verifies semantic document search."
     )
     files = {"file": ("sidro-v1-sample.txt", sample_text.encode("utf-8"), "text/plain")}
     uploaded = expect_success("Upload text file", request("POST", "/api/files/upload", files=files))
@@ -324,6 +343,9 @@ def main() -> None:
     file_hits = expect_success("Search indexed files", request("POST", "/api/files/search", json={"query": "starforge"}))
     if not any("starforge" in item.get("content", "").lower() for item in file_hits):
         fail("Search indexed files", "uploaded file was not found")
+    semantic_hits = expect_success("Phase 10 semantic document search", request("POST", "/api/files/search", json={"query": "project codename", "search_mode": "semantic"}))
+    if not semantic_hits or not any(item.get("search_mode") == "semantic" for item in semantic_hits):
+        fail("Phase 10 semantic document search", "semantic search did not return semantic hits")
 
     context_preview = expect_success(
         "Phase 3 context preview",
@@ -337,6 +359,18 @@ def main() -> None:
         fail("Phase 4 source labels", "file context did not include citation labels")
     ok("Phase 3 context counts", f"memory={context_preview.get('memory_count')} files={context_preview.get('file_count')}")
     ok("Phase 4 source labels", ", ".join(item.get("citation", "") for item in context_preview.get("files", [])[:3]))
+
+    planner = expect_success(
+        "Phase 10 planning mode chat",
+        request(
+            "POST",
+            "/api/chat",
+            json={"message": "Make a short plan to review Sidro documents", "use_file_context": False, "memory_enabled": False, "planning_mode": True, "provider": "ollama", "model": settings.get("ollama_model"), "search_mode": "hybrid"},
+        ),
+    )
+    planner_tools = {item.get("tool") for item in planner.get("tool_activities", [])}
+    if "planning_mode" not in planner_tools or "ai_routing" not in planner_tools:
+        fail("Phase 10 planning mode chat", "planning or routing tool activity was missing")
 
     short_audio = request(
         "POST",
@@ -355,8 +389,10 @@ def main() -> None:
     else:
         fail("TTS fallback path", f"unexpected HTTP {tts.status_code}: {tts.text[:200]}")
 
-    print("Sidro v1 + Phase 9 verification passed.")
+    print("Sidro v1 + Phase 10 verification passed.")
 
 
 if __name__ == "__main__":
     main()
+
+

@@ -1078,3 +1078,36 @@ select:focus,
   color: rgba(255,235,235,0.62);
   font-size: 0.75rem;
 }
+
+.advanced-ai-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+}
+
+.advanced-ai-grid label {
+  display: grid;
+  gap: 0.45rem;
+  color: rgba(255,235,235,0.72);
+  font-size: 0.78rem;
+}
+
+.advanced-ai-grid select {
+  width: 100%;
+  border: 1px solid rgba(255,162,162,0.18);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.07);
+  color: #fff7f7;
+  padding: 0.65rem 0.75rem;
+  outline: none;
+}
+
+.advanced-ai-toggle {
+  align-content: end;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  border: 1px solid rgba(255,162,162,0.15);
+  border-radius: 10px;
+  background: rgba(255,162,162,0.07);
+  padding: 0.65rem 0.75rem;
+}

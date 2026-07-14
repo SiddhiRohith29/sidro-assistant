@@ -1,5 +1,7 @@
-import re
+﻿import re
 import uuid
+from collections import Counter
+from math import sqrt
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -101,7 +103,55 @@ def list_files() -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def search_files(query: str, limit: int = 8) -> list[dict]:
+def _semantic_tokens(text: str) -> Counter[str]:
+    words = [word.lower() for word in re.findall(r"[A-Za-z0-9_]{3,}", text)]
+    stop = {
+        "the", "and", "for", "with", "that", "this", "from", "what", "when", "where", "which", "about",
+        "into", "your", "you", "are", "was", "were", "have", "has", "how", "why", "can", "could",
+    }
+    return Counter(word for word in words if word not in stop)
+
+
+def _cosine_score(left: Counter[str], right: Counter[str]) -> float:
+    if not left or not right:
+        return 0.0
+    shared = set(left) & set(right)
+    numerator = sum(left[token] * right[token] for token in shared)
+    left_norm = sqrt(sum(value * value for value in left.values()))
+    right_norm = sqrt(sum(value * value for value in right.values()))
+    if not left_norm or not right_norm:
+        return 0.0
+    return numerator / (left_norm * right_norm)
+
+
+def semantic_search_files(query: str, limit: int = 8) -> list[dict]:
+    query = query.strip()
+    if not query:
+        return []
+    query_vector = _semantic_tokens(query)
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT f.id AS file_id, f.filename, c.id AS chunk_id, c.chunk_index, c.content
+            FROM file_chunks c
+            JOIN files f ON f.id = c.file_id
+            ORDER BY c.id DESC
+            LIMIT 250
+            """
+        ).fetchall()
+    scored: list[dict] = []
+    for row in rows:
+        item = dict(row)
+        score = _cosine_score(query_vector, _semantic_tokens(f"{item['filename']} {item['content']}"))
+        if score > 0:
+            item["semantic_score"] = round(score, 4)
+            item["search_mode"] = "semantic"
+            scored.append(item)
+    scored.sort(key=lambda item: item.get("semantic_score", 0), reverse=True)
+    return scored[:limit]
+
+
+def keyword_search_files(query: str, limit: int = 8) -> list[dict]:
     query = query.strip()
     if not query:
         return []
@@ -121,7 +171,10 @@ def search_files(query: str, limit: int = 8) -> list[dict]:
                     """,
                     (fts_query, limit),
                 ).fetchall()
-                return [dict(row) for row in rows]
+                hits = [dict(row) for row in rows]
+                for hit in hits:
+                    hit["search_mode"] = "keyword"
+                return hits
             except Exception:
                 pass
         like = f"%{query}%"
@@ -136,7 +189,34 @@ def search_files(query: str, limit: int = 8) -> list[dict]:
             """,
             (like, like, limit),
         ).fetchall()
-    return [dict(row) for row in rows]
+    hits = [dict(row) for row in rows]
+    for hit in hits:
+        hit["search_mode"] = "keyword"
+    return hits
+
+
+def search_files(query: str, limit: int = 8, mode: str = "hybrid") -> list[dict]:
+    mode = (mode or "hybrid").lower()
+    if mode == "keyword":
+        return keyword_search_files(query, limit)
+    if mode == "semantic":
+        return semantic_search_files(query, limit)
+
+    merged: dict[int, dict] = {}
+    for hit in keyword_search_files(query, limit):
+        hit["search_mode"] = "hybrid-keyword"
+        merged[hit["chunk_id"]] = hit
+    for hit in semantic_search_files(query, limit):
+        current = merged.get(hit["chunk_id"])
+        if current:
+            current["search_mode"] = "hybrid"
+            current["semantic_score"] = hit.get("semantic_score")
+        else:
+            hit["search_mode"] = "hybrid-semantic"
+            merged[hit["chunk_id"]] = hit
+    results = list(merged.values())
+    results.sort(key=lambda item: (0 if "keyword" in item.get("search_mode", "") else 1, -float(item.get("semantic_score") or 0)))
+    return results[:limit]
 
 
 def get_file_chunks(file_id: int, limit: int = 20) -> list[dict]:
@@ -159,3 +239,4 @@ def latest_file_id() -> int | None:
     with get_connection() as conn:
         row = conn.execute("SELECT id FROM files ORDER BY id DESC LIMIT 1").fetchone()
     return row["id"] if row else None
+

@@ -137,6 +137,10 @@ function App() {
   const [ttsVoice, setTtsVoice] = useState("alloy");
   const [memoryEnabled, setMemoryEnabled] = useState(true);
   const [useFileContext, setUseFileContext] = useState(true);
+  const [planningMode, setPlanningMode] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState("auto");
+  const [selectedModel, setSelectedModel] = useState("");
+  const [searchMode, setSearchMode] = useState("hybrid");
   const [recording, setRecording] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
   const [liveTranscript, setLiveTranscript] = useState("");
@@ -249,6 +253,9 @@ function App() {
       setSettings(loadedSettings);
       setStatusMessage("Sidro loaded local workspace.");
       setTtsVoice(loadedSettings.tts_voice);
+      setSelectedProvider(loadedSettings.chat_provider === "auto" ? "auto" : loadedSettings.chat_provider);
+      setSelectedModel(loadedSettings.ollama_model || loadedSettings.chat_model || "");
+      setSearchMode(loadedSettings.default_search_mode || "hybrid");
       await Promise.all([refreshMemories(), refreshMemorySuggestions(), refreshFiles(), refreshNotes(), refreshTasks(), refreshReminders(), refreshToday(), refreshConversations()]);
         await refreshReliability();
     } catch (err) {
@@ -410,7 +417,11 @@ function App() {
           message,
           conversation_id: conversationId,
           use_file_context: useFileContext,
-          memory_enabled: memoryEnabled
+          memory_enabled: memoryEnabled,
+          planning_mode: planningMode,
+          provider: selectedProvider,
+          model: selectedModel || undefined,
+          search_mode: searchMode
         },
         controller.signal
       );
@@ -681,7 +692,7 @@ function App() {
     setError("");
     setIsPreviewingContext(true);
     try {
-      const preview = await api.contextPreview({ query, use_file_context: useFileContext, memory_enabled: memoryEnabled });
+      const preview = await api.contextPreview({ query, use_file_context: useFileContext, memory_enabled: memoryEnabled, search_mode: searchMode });
       setContextPreview(preview);
       setActivities([{ tool: "context_preview", status: "ready", detail: { memory: preview.memory_count, files: preview.file_count } }]);
     } catch (err) {
@@ -780,7 +791,7 @@ function App() {
   async function searchFiles(event: FormEvent) {
     event.preventDefault();
     if (!fileQuery.trim()) return;
-    setFileHits(await api.searchFiles(fileQuery));
+    setFileHits(await api.searchFiles(fileQuery, searchMode));
   }
 
   async function saveTask(event: FormEvent) {
@@ -1048,6 +1059,10 @@ function App() {
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={voiceReplies} onChange={(event) => setVoiceReplies(event.target.checked)} />
                     Voice
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={planningMode} onChange={(event) => setPlanningMode(event.target.checked)} />
+                    Planner
                   </label>
                 </div>
               </div>
@@ -1406,6 +1421,34 @@ function App() {
                     Memory enabled
                   </label>
                 </div>
+              <div className="cyber-surface p-3 lg:col-span-2">
+                <span className="text-xs uppercase text-slate-500">Advanced AI</span>
+                <div className="mt-2 text-sm text-slate-100">Phase {settings?.advanced_ai_phase || 10}: model picker, hybrid routing, semantic document search, and planning mode.</div>
+                <div className="advanced-ai-grid mt-3">
+                  <label>
+                    <span>Provider</span>
+                    <select value={selectedProvider} onChange={(event) => setSelectedProvider(event.target.value)}>
+                      {(settings?.available_providers || ["auto", "ollama", "openai"]).map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Model</span>
+                    <select value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)}>
+                      {(settings?.available_models || [settings?.ollama_model || "qwen2.5:7b"]).map((model) => <option key={model} value={model}>{model}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Document search</span>
+                    <select value={searchMode} onChange={(event) => setSearchMode(event.target.value)}>
+                      {(["hybrid", "semantic", "keyword"]).map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+                    </select>
+                  </label>
+                  <label className="advanced-ai-toggle">
+                    <input type="checkbox" checked={planningMode} onChange={(event) => setPlanningMode(event.target.checked)} />
+                    <span>Planning mode</span>
+                  </label>
+                </div>
+              </div>
               </div>
               <div className="cyber-surface p-3">
                 <span className="text-xs uppercase text-slate-500">UI polish</span>
@@ -1560,6 +1603,7 @@ function SettingRow({ label, value }: { label: string; value: string }) {
 }
 
 export default App;
+
 
 
 

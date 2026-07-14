@@ -2,7 +2,7 @@
 
 Sidro is a local-first personal AI assistant for Siddharth. It runs on a Windows machine, opens in a browser, stores data locally in SQLite, and can use Ollama for local chat so the app does not depend on OpenAI quota for normal use.
 
-Current status: Sidro v1 roadmap Phases 1 through 9 are 100% complete for the current local scope. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, a polished light neon coral UI, and Phase 9 reliability tools for health checks, backups, restore preview, migration safety, and one-click launching.
+Current status: Sidro v1 roadmap Phases 1 through 10 are 100% complete for the current local scope. The active app uses a FastAPI backend, a React/Vite frontend, SQLite storage, Ollama chat fallback, local faster-whisper speech-to-text, memory, notes, file upload/search, browser TTS fallback, a polished light neon coral UI, Phase 9 reliability tools, and Phase 10 advanced AI controls for model picking, hybrid routing, semantic document search, and planning mode.
 
 ## Phase Status
 
@@ -18,7 +18,8 @@ Current status: Sidro v1 roadmap Phases 1 through 9 are 100% complete for the cu
 
 | Phase 8: UI/UX Polish | 100% complete | Responsive mobile navigation, labeled mobile tabs, skip link, screen-reader live status, keyboard shortcuts, improved loading states, settings polish, reduced-motion support, and verification coverage are implemented. |
 | Phase 9: Reliability And Testing | 100% complete | Startup health checker, friendlier backend errors, one-click launcher, backup script, backup/restore API, Settings reliability panel, schema migration safety, app startup state, and Phase 9 verifier coverage are implemented. |
-Next roadmap target: Phase 10 Optional Advanced AI.
+| Phase 10: Optional Advanced AI | 100% complete | Model picker, hybrid OpenAI/local routing controls, Ollama model discovery, semantic document search, Ask-my-documents search modes, planning mode, route preview endpoint, and Phase 10 verifier coverage are implemented. |
+Next roadmap target: post-v1 refinement, packaging, and real-world usage polish.
 
 ## Tech Stack
 
@@ -164,7 +165,7 @@ cd "C:\Users\siddh\Documents\ai assistant\sidro-run"
 .\scripts\verify-v1.ps1
 ```
 
-The script checks Phase 1 through Phase 9 acceptance items:
+The script checks Phase 1 through Phase 10 acceptance items:
 
 - Backend health and settings
 - Phase 9 roadmap health/settings marker
@@ -177,6 +178,7 @@ The script checks Phase 1 through Phase 9 acceptance items:
 - TTS backend or frontend fallback path
 - Keyboard shortcut and accessibility settings
 - Phase 9 startup health, backup, restore preview, and friendly validation errors
+- Phase 10 model picker, route preview, semantic search, and planning mode
 
 It uses small safe test records in the local SQLite database and does not require OpenAI quota.
 
@@ -359,6 +361,14 @@ The Settings tab shows the current backend/session configuration.
 - Reduced motion: The UI respects system reduced-motion preferences.
 - Mobile layout: Navigation compresses into labeled icon tabs and the chat composer keeps usable spacing on small screens.
 
+## Advanced AI Controls
+
+- Model picker: Settings shows locally available Ollama models and lets you choose the model used for chat.
+- Provider mode: Settings can use `auto`, `ollama`, or `openai`; local Ollama remains the stable default.
+- Hybrid routing: `auto` can use OpenAI when configured and fall back locally; without an API key, it stays local.
+- Document search mode: Files and chat can use `hybrid`, `semantic`, or `keyword` search.
+- Planning mode: The Chat header and Settings include a Planner toggle that adds structured planner guidance to Sidro replies.
+- Route preview: `/api/ai/route-preview` reports which provider/model Sidro would use before a chat call.
 ## Reliability Tools
 
 - `scripts\launch-sidro.ps1`: Starts Ollama, backend, frontend, and opens Sidro in the browser.
@@ -415,6 +425,7 @@ git push -u origin main
 ```
 
 Do not commit `.env`, `data/sidro.sqlite`, `node_modules`, local model files, or logs. The `.gitignore` is set up to keep those out.
+
 
 
 
